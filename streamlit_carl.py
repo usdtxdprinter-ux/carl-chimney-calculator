@@ -1,7 +1,6 @@
 """
 CARL - Chimney Analysis and Reasoning Layer
-Streamlit Web Application for Beta Testing
-PUBLIC VERSION
+Chatbot Interface for Natural Conversation
 """
 
 import streamlit as st
@@ -10,10 +9,10 @@ import json
 
 # Page configuration
 st.set_page_config(
-    page_title="CARL - Chimney Analysis & Reasoning Layer",
+    page_title="CARL - Chimney Calculator",
     page_icon="🔥",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize calculator
@@ -23,603 +22,618 @@ def get_calculator():
 
 calc = get_calculator()
 
-# Custom CSS
-st.markdown("""
-<style>
-    .big-font {
-        font-size: 24px !important;
-        font-weight: bold;
+# Initialize session state for conversation
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'current_step' not in st.session_state:
+    st.session_state.current_step = 'welcome'
+if 'project_data' not in st.session_state:
+    st.session_state.project_data = {
+        'appliances': [],
+        'elevation_ft': 0,
+        'temp_outside_f': 70,
+        'connector_configs': [],
+        'manifold_config': None
     }
-    .warning-box {
-        padding: 15px;
-        background-color: #fff3cd;
-        border-left: 5px solid #ffc107;
-        margin: 10px 0;
-    }
-    .success-box {
-        padding: 15px;
-        background-color: #d4edda;
-        border-left: 5px solid #28a745;
-        margin: 10px 0;
-    }
-    .danger-box {
-        padding: 15px;
-        background-color: #f8d7da;
-        border-left: 5px solid #dc3545;
-        margin: 10px 0;
-    }
-    .info-box {
-        padding: 15px;
-        background-color: #d1ecf1;
-        border-left: 5px solid #17a2b8;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-# Initialize session state
-if 'appliances' not in st.session_state:
-    st.session_state.appliances = []
-if 'step' not in st.session_state:
-    st.session_state.step = 1
-if 'results' not in st.session_state:
-    st.session_state.results = None
+# Elevation to barometric pressure conversion
+def elevation_to_pressure(elevation_ft):
+    """Convert elevation in feet to barometric pressure in inches Hg"""
+    # Standard formula: P = P0 * (1 - 6.87535e-6 * h)^5.2561
+    # Where P0 = 29.92 in Hg at sea level, h = elevation in feet
+    if elevation_ft == 0:
+        return 29.92
+    P0 = 29.92
+    pressure = P0 * (1 - 6.87535e-6 * elevation_ft) ** 5.2561
+    return pressure
 
-# Header
-st.title("🔥 CARL - Chimney Analysis and Reasoning Layer")
-st.markdown("### Multi-Appliance Venting System Analyzer")
+# Helper function to add message
+def add_message(role, content):
+    st.session_state.messages.append({"role": role, "content": content})
 
-# Beta notice
-st.info("🧪 **BETA VERSION** - This tool is under active development. For production use, please contact US Draft Co. at 817-393-4029")
+# Helper to get current appliance being configured
+def get_current_appliance_index():
+    return len(st.session_state.project_data['appliances'])
 
-# Disclaimer
-with st.expander("⚠️ IMPORTANT: Calculation Limitations & Disclaimers", expanded=False):
-    st.markdown("""
-    <div class="warning-box">
-    <h4>Steady-State Calculation Limitations</h4>
-    <p>These calculations are based on <strong>STEADY-STATE</strong> conditions at design temperatures (70°F outside). 
-    Actual draft will vary significantly with:</p>
-    <ul>
-        <li><strong>Outdoor temperature</strong> - Seasonal variations (winter may have 40-60% higher draft, summer 30-50% lower)</li>
-        <li><strong>Wind conditions</strong> - Can swing draft ±0.05 to ±0.10 in w.c. instantly</li>
-        <li><strong>Barometric pressure</strong> - Changes daily with weather</li>
-        <li><strong>Building pressure</strong> - HVAC systems, exhaust fans affect draft</li>
-        <li><strong>Operating scenarios</strong> - Different appliance combinations</li>
-    </ul>
-    <p><strong>US Draft Co. draft controls are REQUIRED to maintain consistent performance 
-    throughout all operating conditions and seasons.</strong></p>
-    </div>
-    """, unsafe_allow_html=True)
+# Main title
+st.title("🔥 CARL")
+st.caption("Chimney Analysis and Reasoning Layer")
 
-# Sidebar navigation
-with st.sidebar:
-    st.markdown("### 📋 Navigation")
-    st.markdown(f"**Current Step:** {st.session_state.step}")
-    
-    if st.button("🔄 Start Over", use_container_width=True):
-        st.session_state.appliances = []
-        st.session_state.step = 1
-        st.session_state.results = None
-        st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 📞 Contact")
-    st.markdown("""
-    **US Draft by RM Manifold**  
-    100 S Sylvania Ave  
-    Fort Worth, TX 76111  
-    📞 817-393-4029  
-    🌐 [www.usdraft.com](https://www.usdraft.com)
-    """)
+# Chat container
+chat_container = st.container()
 
-# Main content
-if st.session_state.step == 1:
-    st.markdown("## Step 1: Appliance Configuration")
+with chat_container:
+    # Display all previous messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+# Input area at bottom
+user_input = st.chat_input("Type your response here...")
+
+# Welcome message
+if st.session_state.current_step == 'welcome' and len(st.session_state.messages) == 0:
+    welcome_msg = """Hello! I'm CARL, your chimney analysis assistant. I'll help you analyze your venting system.
+
+I'll guide you through:
+- Configuring your appliances
+- Setting up connectors
+- Designing the common vent
+- Analyzing the complete system
+
+Let's start! How many appliances will be vented into this common system? (Enter 1-6)"""
     
-    num_appliances = st.number_input(
-        "How many appliances? (1-6)", 
-        min_value=1, 
-        max_value=6, 
-        value=1,
-        help="Enter the total number of appliances that will be vented through the common vent"
-    )
+    add_message("assistant", welcome_msg)
+    st.rerun()
+
+# Process user input
+if user_input:
+    # Add user message to chat
+    add_message("user", user_input)
     
-    st.markdown("---")
+    # Process based on current step
+    if st.session_state.current_step == 'welcome':
+        try:
+            num_appliances = int(user_input)
+            if 1 <= num_appliances <= 6:
+                st.session_state.project_data['num_appliances'] = num_appliances
+                st.session_state.current_step = 'elevation'
+                response = f"Great! We'll configure {num_appliances} appliance{'s' if num_appliances > 1 else ''}.\n\nFirst, what is the elevation of your installation in feet above sea level? (This affects barometric pressure)\n\nExamples:\n- Sea level: 0 ft\n- Denver: 5,280 ft\n- Most locations: 0-2,000 ft"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a number between 1 and 6.")
+        except:
+            add_message("assistant", "Please enter a valid number (1-6).")
     
-    appliances = []
+    elif st.session_state.current_step == 'elevation':
+        try:
+            elevation = float(user_input)
+            if -500 <= elevation <= 15000:
+                st.session_state.project_data['elevation_ft'] = elevation
+                barometric = elevation_to_pressure(elevation)
+                st.session_state.current_step = 'outside_temp'
+                response = f"Elevation set to {elevation:,.0f} ft (Barometric pressure: {barometric:.2f} in Hg)\n\nWhat is the outside air temperature for your design calculation? (in °F)\n\nTypical values:\n- Winter design: 0-20°F\n- Standard: 70°F\n- Summer: 90-95°F"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a realistic elevation (-500 to 15,000 ft).")
+        except:
+            add_message("assistant", "Please enter a valid elevation in feet.")
     
-    for i in range(num_appliances):
-        st.markdown(f"### Appliance #{i+1}")
+    elif st.session_state.current_step == 'outside_temp':
+        try:
+            temp = float(user_input)
+            if -20 <= temp <= 120:
+                st.session_state.project_data['temp_outside_f'] = temp
+                st.session_state.current_step = 'appliance_mbh'
+                response = f"Outside temperature set to {temp}°F.\n\nNow let's configure Appliance #1.\n\nWhat is the input rating in MBH (thousands of BTU/hr)?"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a realistic temperature (-20 to 120°F).")
+        except:
+            add_message("assistant", "Please enter a valid temperature.")
+    
+    elif st.session_state.current_step == 'appliance_mbh':
+        try:
+            mbh = float(user_input)
+            if mbh > 0:
+                appliance_num = get_current_appliance_index() + 1
+                st.session_state.temp_mbh = mbh
+                st.session_state.current_step = 'appliance_outlet'
+                response = f"Appliance #{appliance_num}: {mbh} MBH\n\nWhat is the appliance outlet diameter in inches?\n\n(The connector diameter cannot be smaller than this)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a positive MBH value.")
+        except:
+            add_message("assistant", "Please enter a valid MBH number.")
+    
+    elif st.session_state.current_step == 'appliance_outlet':
+        try:
+            outlet_dia = float(user_input)
+            if 3 <= outlet_dia <= 24:
+                appliance_num = get_current_appliance_index() + 1
+                st.session_state.temp_outlet = outlet_dia
+                st.session_state.current_step = 'appliance_category'
+                response = f"Appliance #{appliance_num} outlet: {outlet_dia}\"\n\nWhat category is this appliance?\n\n1) Category I - Fan Assisted\n2) Category II - Non-Condensing\n3) Category III - Non-Condensing  \n4) Category IV - Condensing\n5) Custom (I'll enter CO2% and temperature)\n\nEnter 1, 2, 3, 4, or 5:"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a diameter between 3 and 24 inches.")
+        except:
+            add_message("assistant", "Please enter a valid diameter.")
+    
+    elif st.session_state.current_step == 'appliance_category':
+        category_map = {
+            '1': ('cat_i_fan', 'Category I - Fan Assisted'),
+            '2': ('cat_ii', 'Category II - Non-Condensing'),
+            '3': ('cat_iii', 'Category III - Non-Condensing'),
+            '4': ('cat_iv', 'Category IV - Condensing'),
+            '5': ('custom', 'Custom')
+        }
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            mbh = st.number_input(
-                f"Input Rating (MBH)", 
-                min_value=1.0, 
-                value=100.0,
-                key=f"mbh_{i}",
-                help="Appliance input in thousands of BTU per hour"
-            )
+        if user_input in category_map:
+            cat_key, cat_name = category_map[user_input]
+            st.session_state.temp_category = cat_key
             
-            data_source = st.radio(
-                "Combustion Data Source",
-                ["Generic Category Values", "Custom Analyzer Data"],
-                key=f"data_source_{i}"
-            )
+            if cat_key == 'custom':
+                st.session_state.current_step = 'appliance_co2'
+                response = f"Custom appliance selected.\n\nWhat is the CO2 percentage from the combustion analyzer?\n\n(Typical range: 6-12%)"
+                add_message("assistant", response)
+            else:
+                # Use defaults for this category
+                cat_info = calc.appliance_categories[cat_key]
+                st.session_state.temp_co2 = cat_info['co2_default']
+                st.session_state.temp_temp = cat_info['temp_default']
+                st.session_state.current_step = 'appliance_fuel'
+                response = f"{cat_name} selected.\n\nDefaults: {cat_info['co2_default']}% CO2, {cat_info['temp_default']}°F\n\nWhat fuel type?\n\n1) Natural Gas\n2) LP Gas (Propane)\n3) Oil\n\nEnter 1, 2, or 3:"
+                add_message("assistant", response)
+        else:
+            add_message("assistant", "Please enter 1, 2, 3, 4, or 5.")
+    
+    elif st.session_state.current_step == 'appliance_co2':
+        try:
+            co2 = float(user_input)
+            if 1 <= co2 <= 15:
+                st.session_state.temp_co2 = co2
+                st.session_state.current_step = 'appliance_temp'
+                response = f"CO2 set to {co2}%\n\nWhat is the flue gas temperature in °F?\n\n(Typical range: 250-400°F)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a CO2% between 1 and 15.")
+        except:
+            add_message("assistant", "Please enter a valid CO2 percentage.")
+    
+    elif st.session_state.current_step == 'appliance_temp':
+        try:
+            temp = float(user_input)
+            if 100 <= temp <= 600:
+                st.session_state.temp_temp = temp
+                st.session_state.current_step = 'appliance_fuel'
+                response = f"Flue gas temperature set to {temp}°F\n\nWhat fuel type?\n\n1) Natural Gas\n2) LP Gas (Propane)\n3) Oil\n\nEnter 1, 2, or 3:"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a temperature between 100 and 600°F.")
+        except:
+            add_message("assistant", "Please enter a valid temperature.")
+    
+    elif st.session_state.current_step == 'appliance_fuel':
+        fuel_map = {
+            '1': ('natural_gas', 'Natural Gas'),
+            '2': ('lp_gas', 'LP Gas'),
+            '3': ('oil', 'Oil')
+        }
         
-        with col2:
-            fuel_type = st.selectbox(
-                "Fuel Type",
-                ["Natural Gas", "LP Gas (Propane)", "Oil"],
-                key=f"fuel_{i}"
-            )
-            fuel_map = {
-                "Natural Gas": "natural_gas",
-                "LP Gas (Propane)": "lp_gas",
-                "Oil": "oil"
+        if user_input in fuel_map:
+            fuel_key, fuel_name = fuel_map[user_input]
+            
+            # Save appliance
+            appliance_num = get_current_appliance_index() + 1
+            appliance = {
+                'mbh': st.session_state.temp_mbh,
+                'co2_percent': st.session_state.temp_co2,
+                'temp_f': st.session_state.temp_temp,
+                'category': st.session_state.temp_category,
+                'fuel_type': fuel_key,
+                'outlet_diameter': st.session_state.temp_outlet,
+                'appliance_number': appliance_num
+            }
+            st.session_state.project_data['appliances'].append(appliance)
+            
+            # Clear temp data
+            for key in ['temp_mbh', 'temp_co2', 'temp_temp', 'temp_category', 'temp_outlet']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Check if more appliances needed
+            if appliance_num < st.session_state.project_data['num_appliances']:
+                st.session_state.current_step = 'appliance_mbh'
+                response = f"✓ Appliance #{appliance_num} configured: {appliance['mbh']} MBH, {fuel_name}\n\nNow let's configure Appliance #{appliance_num + 1}.\n\nWhat is the input rating in MBH?"
+                add_message("assistant", response)
+            else:
+                st.session_state.current_step = 'connector_which'
+                response = f"✓ All {appliance_num} appliances configured!\n\nNow let's configure the connectors (individual appliance to common vent).\n\nWhich appliance has the worst-case connector (longest run, most fittings)?\n\nEnter the appliance number (1-{appliance_num}):"
+                add_message("assistant", response)
+        else:
+            add_message("assistant", "Please enter 1, 2, or 3.")
+    
+    elif st.session_state.current_step == 'connector_which':
+        try:
+            app_num = int(user_input)
+            if 1 <= app_num <= len(st.session_state.project_data['appliances']):
+                st.session_state.worst_connector_appliance = app_num - 1
+                worst_app = st.session_state.project_data['appliances'][app_num - 1]
+                min_dia = worst_app['outlet_diameter']
+                st.session_state.current_step = 'connector_diameter'
+                response = f"Configuring connector for Appliance #{app_num} ({worst_app['mbh']} MBH)\n\nWhat is the connector diameter in inches?\n\n⚠️ Cannot be less than appliance outlet: {min_dia}\""
+                add_message("assistant", response)
+            else:
+                add_message("assistant", f"Please enter a number between 1 and {len(st.session_state.project_data['appliances'])}.")
+        except:
+            add_message("assistant", "Please enter a valid appliance number.")
+    
+    elif st.session_state.current_step == 'connector_diameter':
+        try:
+            dia = float(user_input)
+            worst_app = st.session_state.project_data['appliances'][st.session_state.worst_connector_appliance]
+            min_dia = worst_app['outlet_diameter']
+            
+            if dia >= min_dia and dia <= 24:
+                st.session_state.temp_connector_dia = dia
+                st.session_state.current_step = 'connector_length'
+                response = f"Connector diameter: {dia}\"\n\nWhat is the total connector length in feet?"
+                add_message("assistant", response)
+            elif dia < min_dia:
+                add_message("assistant", f"⚠️ Connector diameter ({dia}\") cannot be less than appliance outlet ({min_dia}\").\n\nPlease enter a diameter of at least {min_dia}\".")
+            else:
+                add_message("assistant", "Please enter a diameter between {min_dia} and 24 inches.")
+        except:
+            add_message("assistant", "Please enter a valid diameter.")
+    
+    elif st.session_state.current_step == 'connector_length':
+        try:
+            length = float(user_input)
+            if length > 0:
+                st.session_state.temp_connector_length = length
+                st.session_state.current_step = 'connector_90'
+                response = f"Connector length: {length} ft\n\nHow many 90° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a positive length.")
+        except:
+            add_message("assistant", "Please enter a valid length in feet.")
+    
+    elif st.session_state.current_step == 'connector_90':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_connector_90 = num
+                st.session_state.current_step = 'connector_45'
+                response = f"90° elbows: {num}\n\nHow many 45° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'connector_45':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_connector_45 = num
+                st.session_state.current_step = 'connector_30'
+                response = f"45° elbows: {num}\n\nHow many 30° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'connector_30':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_connector_30 = num
+                st.session_state.current_step = 'connector_90tee'
+                response = f"30° elbows: {num}\n\nHow many 90° Tees (flow through)? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'connector_90tee':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_connector_90tee = num
+                st.session_state.current_step = 'connector_45tee'
+                response = f"90° Tees: {num}\n\nHow many 45° Lateral Tees? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'connector_45tee':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                # Build fittings dict
+                fittings = {'entrance': 1}
+                if st.session_state.temp_connector_90 > 0:
+                    fittings['90_elbow'] = st.session_state.temp_connector_90
+                if st.session_state.temp_connector_45 > 0:
+                    fittings['45_elbow'] = st.session_state.temp_connector_45
+                if st.session_state.temp_connector_30 > 0:
+                    fittings['30_elbow'] = st.session_state.temp_connector_30
+                if st.session_state.temp_connector_90tee > 0:
+                    fittings['90_tee_flow_through'] = st.session_state.temp_connector_90tee
+                if num > 0:
+                    fittings['45_tee_lateral'] = num
+                
+                # Save connector configs for all appliances (simplified)
+                st.session_state.project_data['connector_configs'] = []
+                for i in range(len(st.session_state.project_data['appliances'])):
+                    st.session_state.project_data['connector_configs'].append({
+                        'diameter_inches': st.session_state.temp_connector_dia,
+                        'length_ft': st.session_state.temp_connector_length,
+                        'height_ft': 0,
+                        'fittings': fittings.copy()
+                    })
+                
+                # Clear temp data
+                for key in list(st.session_state.keys()):
+                    if key.startswith('temp_connector'):
+                        del st.session_state[key]
+                
+                st.session_state.current_step = 'manifold_diameter'
+                response = f"✓ Connector configuration complete!\n\nNow let's configure the common vent (manifold).\n\nWhat is the common vent diameter in inches?"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_diameter':
+        try:
+            dia = float(user_input)
+            if 6 <= dia <= 48:
+                st.session_state.temp_manifold_dia = dia
+                st.session_state.current_step = 'manifold_height'
+                response = f"Common vent diameter: {dia}\"\n\nWhat is the vertical height in feet?"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a diameter between 6 and 48 inches.")
+        except:
+            add_message("assistant", "Please enter a valid diameter.")
+    
+    elif st.session_state.current_step == 'manifold_height':
+        try:
+            height = float(user_input)
+            if height > 0:
+                st.session_state.temp_manifold_height = height
+                st.session_state.current_step = 'manifold_horizontal'
+                response = f"Vertical height: {height} ft\n\nWhat is the horizontal run in feet? (Enter 0 if none)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter a positive height.")
+        except:
+            add_message("assistant", "Please enter a valid height.")
+    
+    elif st.session_state.current_step == 'manifold_horizontal':
+        try:
+            horiz = float(user_input)
+            if horiz >= 0:
+                st.session_state.temp_manifold_horiz = horiz
+                st.session_state.current_step = 'manifold_90'
+                response = f"Horizontal run: {horiz} ft\n\nHow many 90° elbows in the common vent? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a valid length.")
+    
+    elif st.session_state.current_step == 'manifold_90':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_manifold_90 = num
+                st.session_state.current_step = 'manifold_45'
+                response = f"90° elbows: {num}\n\nHow many 45° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_45':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_manifold_45 = num
+                st.session_state.current_step = 'manifold_30'
+                response = f"45° elbows: {num}\n\nHow many 30° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_30':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_manifold_30 = num
+                st.session_state.current_step = 'manifold_90tee'
+                response = f"30° elbows: {num}\n\nHow many 90° Tees (flow through)? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_90tee':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_manifold_90tee = num
+                st.session_state.current_step = 'manifold_45tee'
+                response = f"90° Tees: {num}\n\nHow many 45° Lateral Tees? (Enter a whole number)"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_45tee':
+        try:
+            num = int(user_input)
+            if num >= 0:
+                st.session_state.temp_manifold_45tee = num
+                st.session_state.current_step = 'manifold_cap'
+                response = f"45° Lateral Tees: {num}\n\nDoes the vent have a termination cap?\n\n1) Yes\n2) No\n\nEnter 1 or 2:"
+                add_message("assistant", response)
+            else:
+                add_message("assistant", "Please enter 0 or a positive number.")
+        except:
+            add_message("assistant", "Please enter a whole number.")
+    
+    elif st.session_state.current_step == 'manifold_cap':
+        if user_input in ['1', '2']:
+            has_cap = (user_input == '1')
+            
+            # Build fittings dict
+            fittings = {'exit': 1}
+            if st.session_state.temp_manifold_90 > 0:
+                fittings['90_elbow'] = st.session_state.temp_manifold_90
+            if st.session_state.temp_manifold_45 > 0:
+                fittings['45_elbow'] = st.session_state.temp_manifold_45
+            if st.session_state.temp_manifold_30 > 0:
+                fittings['30_elbow'] = st.session_state.temp_manifold_30
+            if st.session_state.temp_manifold_90tee > 0:
+                fittings['90_tee_flow_through'] = st.session_state.temp_manifold_90tee
+            if st.session_state.temp_manifold_45tee > 0:
+                fittings['45_tee_lateral'] = st.session_state.temp_manifold_45tee
+            if has_cap:
+                fittings['termination_cap'] = 1
+            
+            # Save manifold config
+            st.session_state.project_data['manifold_config'] = {
+                'diameter_inches': st.session_state.temp_manifold_dia,
+                'height_ft': st.session_state.temp_manifold_height,
+                'length_ft': st.session_state.temp_manifold_height + st.session_state.temp_manifold_horiz,
+                'fittings': fittings
             }
             
-            if data_source == "Generic Category Values":
-                category = st.selectbox(
-                    "Appliance Category",
-                    [
-                        "Category I - Fan Assisted",
-                        "Category II - Non-Condensing",
-                        "Category III - Non-Condensing",
-                        "Category IV - Condensing"
-                    ],
-                    key=f"category_{i}"
+            # Clear temp data
+            for key in list(st.session_state.keys()):
+                if key.startswith('temp_manifold'):
+                    del st.session_state[key]
+            
+            # Run analysis!
+            st.session_state.current_step = 'analyzing'
+            response = "✓ System configuration complete!\n\n🔍 Analyzing your venting system...\n\nThis will take just a moment."
+            add_message("assistant", response)
+            
+            # Perform calculation
+            try:
+                result = calc.complete_multi_appliance_analysis(
+                    appliances=st.session_state.project_data['appliances'],
+                    connector_configs=st.session_state.project_data['connector_configs'],
+                    manifold_config=st.session_state.project_data['manifold_config'],
+                    temp_outside_f=st.session_state.project_data['temp_outside_f']
                 )
+                st.session_state.results = result
+                st.session_state.current_step = 'results'
                 
-                cat_map = {
-                    "Category I - Fan Assisted": "cat_i_fan",
-                    "Category II - Non-Condensing": "cat_ii",
-                    "Category III - Non-Condensing": "cat_iii",
-                    "Category IV - Condensing": "cat_iv"
-                }
-                cat_key = cat_map[category]
-                cat_info = calc.appliance_categories[cat_key]
+                # Format results
+                worst = result['worst_case']['worst_case']
                 
-                co2 = cat_info['co2_default']
-                temp = cat_info['temp_default']
+                results_msg = f"""
+✅ **ANALYSIS COMPLETE**
+
+**WORST CASE CONNECTOR**
+Appliance #{worst['appliance_id']} ({worst['appliance']['mbh']} MBH)
+- Draft: {worst['connector_draft']:.4f} in w.c.
+- Velocity: {worst['connector_result']['connector']['velocity_fps'] * 60:.0f} ft/min
+
+**OPERATING SCENARIOS**
+"""
+                scenarios = [
+                    ('All Appliances', result['all_operating']),
+                    ('All Minus One', result['all_minus_one']),
+                    ('Single Largest', result['single_largest']),
+                    ('Single Smallest', result['single_smallest'])
+                ]
                 
-                st.info(f"CO₂: {co2}% | Temperature: {temp}°F | Pressure: {cat_info['pressure_range'][0]} to {cat_info['pressure_range'][1]} in w.c.")
-            else:
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    co2 = st.number_input(
-                        "CO₂ Percentage",
-                        min_value=1.0,
-                        max_value=15.0,
-                        value=8.5,
-                        key=f"co2_{i}"
+                for name, scenario in scenarios:
+                    if scenario:
+                        cfm = scenario['combined']['total_cfm']
+                        vel = scenario['common_vent']['velocity_fps'] * 60
+                        draft = scenario['common_vent']['available_draft_inwc']
+                        results_msg += f"\n{name}: {cfm:.1f} CFM, {vel:.0f} ft/min, {draft:.4f} in w.c."
+                
+                results_msg += f"""
+
+**TOTAL SYSTEM (Connector + Manifold)**
+- Connector Draft: {worst['connector_draft']:.4f} in w.c.
+- Manifold Draft: {worst['manifold_draft']:.4f} in w.c.
+- **TOTAL AVAILABLE: {worst['total_available_draft']:.4f} in w.c.**
+
+Pressure vs. Atmosphere: {-worst['total_available_draft']:.4f} in w.c.
+"""
+                
+                # Category compliance
+                if worst['appliance']['category'] != 'custom':
+                    pressure_check = calc.check_appliance_pressure_limits(
+                        worst['appliance'],
+                        worst['total_available_draft']
                     )
-                with col_b:
-                    temp = st.number_input(
-                        "Flue Gas Temperature (°F)",
-                        min_value=100.0,
-                        max_value=600.0,
-                        value=285.0,
-                        key=f"temp_{i}"
-                    )
-                cat_key = 'custom'
-        
-        outlet_diameter = st.number_input(
-            f"Appliance Outlet Diameter (inches)",
-            min_value=3.0,
-            max_value=24.0,
-            value=12.0,
-            step=1.0,
-            key=f"outlet_{i}",
-            help="Diameter of the appliance flue outlet"
-        )
-        
-        appliances.append({
-            'mbh': mbh,
-            'co2_percent': co2,
-            'temp_f': temp,
-            'category': cat_key,
-            'fuel_type': fuel_map[fuel_type],
-            'outlet_diameter': outlet_diameter,
-            'appliance_number': i + 1
-        })
-        
-        st.markdown("---")
-    
-    if st.button("➡️ Next: Configure Connectors", use_container_width=True, type="primary"):
-        st.session_state.appliances = appliances
-        st.session_state.step = 2
-        st.rerun()
+                    results_msg += f"\n**Compliance:** {pressure_check['message']}"
+                
+                # Seasonal variation
+                available = result['all_operating']['common_vent']['available_draft_inwc']
+                winter_draft = available * 1.4
+                summer_draft = available * 0.6
+                
+                results_msg += f"""
 
-elif st.session_state.step == 2:
-    st.markdown("## Step 2: Worst-Case Connector Configuration")
-    
-    st.info("Configure the worst-case appliance connector (longest run, most fittings)")
-    
-    worst_case_idx = st.selectbox(
-        "Select worst-case appliance",
-        range(len(st.session_state.appliances)),
-        format_func=lambda x: f"Appliance #{x+1} ({st.session_state.appliances[x]['mbh']} MBH)"
-    )
-    
-    st.markdown(f"### Connector for Appliance #{worst_case_idx + 1}")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Calculate suggested diameter
-        worst_app = st.session_state.appliances[worst_case_idx]
-        combustion = calc.cfm_from_combustion(
-            mbh=worst_app['mbh'],
-            co2_percent=worst_app['co2_percent'],
-            temp_f=worst_app['temp_f'],
-            fuel_type=worst_app['fuel_type']
-        )
-        
-        standard_sizes = [3, 4, 5, 6, 7, 8, 10, 12]
-        suggested_diameter = None
-        for d in standard_sizes:
-            vel = calc.velocity_from_cfm(combustion['cfm'], d)
-            if 5 <= vel <= 25:
-                suggested_diameter = d
-                break
-        if suggested_diameter is None:
-            suggested_diameter = 6
-        
-        st.info(f"💡 Suggested: {suggested_diameter}\" diameter for {combustion['cfm']:.1f} CFM")
-        
-        connector_diameter = st.number_input(
-            "Connector Diameter (inches)",
-            min_value=3.0,
-            max_value=24.0,
-            value=float(suggested_diameter),
-            step=1.0
-        )
-        
-        connector_length = st.number_input(
-            "Total Connector Length (ft)",
-            min_value=0.0,
-            value=10.0,
-            step=1.0
-        )
-    
-    with col2:
-        st.markdown("**Fittings in Connector:**")
-        num_90_elbow = st.number_input("90° Elbows", min_value=0, value=2, step=1)
-        num_45_elbow = st.number_input("45° Elbows", min_value=0, value=0, step=1)
-        num_tee = st.number_input("Tees", min_value=0, value=0, step=1)
-    
-    fittings = {'entrance': 1}
-    if num_90_elbow > 0:
-        fittings['90_elbow'] = num_90_elbow
-    if num_45_elbow > 0:
-        fittings['45_elbow'] = num_45_elbow
-    if num_tee > 0:
-        fittings['90_tee_flow_through'] = num_tee
-    
-    # Store connector config for all appliances (simplified - same for all)
-    st.session_state.connector_configs = []
-    for i in range(len(st.session_state.appliances)):
-        st.session_state.connector_configs.append({
-            'diameter_inches': connector_diameter,
-            'length_ft': connector_length,
-            'height_ft': 0,
-            'fittings': fittings.copy()
-        })
-    
-    col_back, col_next = st.columns(2)
-    with col_back:
-        if st.button("⬅️ Back", use_container_width=True):
-            st.session_state.step = 1
-            st.rerun()
-    with col_next:
-        if st.button("➡️ Next: Configure Common Vent", use_container_width=True, type="primary"):
-            st.session_state.step = 3
-            st.rerun()
+⚠️ **SEASONAL VARIATION ESTIMATE**
+- Winter (0°F): ~{winter_draft:.4f} in w.c.
+- Design ({st.session_state.project_data['temp_outside_f']}°F): ~{available:.4f} in w.c.
+- Summer (95°F): ~{summer_draft:.4f} in w.c.
+- Variation: {abs(winter_draft - summer_draft):.4f} in w.c. swing
 
-elif st.session_state.step == 3:
-    st.markdown("## Step 3: Common Vent (Manifold) Configuration")
-    
-    # Calculate total CFM
-    combined = calc.calculate_combined_cfm(st.session_state.appliances)
-    total_cfm = combined['total_cfm']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Suggest diameter
-        standard_sizes = [6, 7, 8, 10, 12, 14, 16, 18, 20, 24, 30, 36]
-        suggested_diameter = None
-        for d in standard_sizes:
-            vel = calc.velocity_from_cfm(total_cfm, d)
-            if 8 <= vel <= 20:
-                suggested_diameter = d
-                break
-        if suggested_diameter is None:
-            suggested_diameter = 12
-        
-        st.info(f"💡 Suggested: {suggested_diameter}\" diameter for {total_cfm:.1f} CFM total")
-        
-        manifold_diameter = st.number_input(
-            "Common Vent Diameter (inches)",
-            min_value=6.0,
-            max_value=48.0,
-            value=float(suggested_diameter),
-            step=1.0
-        )
-        
-        vertical_height = st.number_input(
-            "Vertical Height (ft)",
-            min_value=1.0,
-            value=35.0,
-            step=1.0
-        )
-        
-        horizontal_run = st.number_input(
-            "Horizontal Run (ft)",
-            min_value=0.0,
-            value=5.0,
-            step=1.0
-        )
-    
-    with col2:
-        st.markdown("**Fittings in Common Vent:**")
-        num_90_elbow_m = st.number_input("90° Elbows", min_value=0, value=0, step=1, key="manifold_90")
-        num_45_elbow_m = st.number_input("45° Elbows", min_value=0, value=0, step=1, key="manifold_45")
-        has_cap = st.checkbox("Termination Cap", value=True)
-        
-        st.markdown("**Conditions:**")
-        temp_outside = st.number_input(
-            "Outside Air Temperature (°F)",
-            min_value=-20.0,
-            max_value=120.0,
-            value=70.0,
-            step=5.0
-        )
-    
-    fittings_m = {'exit': 1}
-    if num_90_elbow_m > 0:
-        fittings_m['90_elbow'] = num_90_elbow_m
-    if num_45_elbow_m > 0:
-        fittings_m['45_elbow'] = num_45_elbow_m
-    if has_cap:
-        fittings_m['termination_cap'] = 1
-    
-    st.session_state.manifold_config = {
-        'diameter_inches': manifold_diameter,
-        'height_ft': vertical_height,
-        'length_ft': vertical_height + horizontal_run,
-        'fittings': fittings_m
-    }
-    
-    st.session_state.temp_outside = temp_outside
-    
-    col_back, col_next = st.columns(2)
-    with col_back:
-        if st.button("⬅️ Back", use_container_width=True):
-            st.session_state.step = 2
-            st.rerun()
-    with col_next:
-        if st.button("🔍 Run Analysis", use_container_width=True, type="primary"):
-            # Run the analysis
-            result = calc.complete_multi_appliance_analysis(
-                appliances=st.session_state.appliances,
-                connector_configs=st.session_state.connector_configs,
-                manifold_config=st.session_state.manifold_config,
-                temp_outside_f=st.session_state.temp_outside
-            )
-            st.session_state.results = result
-            st.session_state.step = 4
-            st.rerun()
+**US Draft Co. draft controls are REQUIRED for year-round reliability.**
 
-elif st.session_state.step == 4:
-    st.markdown("## 📊 Analysis Results")
-    
-    result = st.session_state.results
-    worst = result['worst_case']['worst_case']
-    
-    # Worst case connector
-    st.markdown("### Worst Case Appliance Connector")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Appliance", f"#{worst['appliance_id']} ({worst['appliance']['mbh']} MBH)")
-    with col2:
-        st.metric("Draft", f"{worst['connector_draft']:.4f} in w.c.")
-    with col3:
-        st.metric("Velocity", f"{worst['connector_result']['connector']['velocity_fps'] * 60:.0f} ft/min")
-    
-    # Operating scenarios
-    st.markdown("### Operating Scenarios")
-    
-    scenarios_data = []
-    for name, scenario in [
-        ('All Appliances', result['all_operating']),
-        ('All Minus One', result['all_minus_one']),
-        ('Single Largest', result['single_largest']),
-        ('Single Smallest', result['single_smallest'])
-    ]:
-        if scenario:
-            scenarios_data.append({
-                'Scenario': name,
-                'CFM': f"{scenario['combined']['total_cfm']:.1f}",
-                'Velocity (ft/min)': f"{scenario['common_vent']['velocity_fps'] * 60:.0f}",
-                'Draft (in wc)': f"{scenario['common_vent']['available_draft_inwc']:.4f}"
-            })
-    
-    st.dataframe(scenarios_data, use_container_width=True, hide_index=True)
-    
-    # Total system
-    st.markdown("### Total System (Connector + Manifold)")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Connector Draft", f"{worst['connector_draft']:.4f} in w.c.")
-    with col2:
-        st.metric("Manifold Draft", f"{worst['manifold_draft']:.4f} in w.c.")
-    with col3:
-        draft_val = worst['total_available_draft']
-        st.metric(
-            "TOTAL AVAILABLE DRAFT", 
-            f"{draft_val:.4f} in w.c.",
-            delta=None,
-            delta_color="off" if draft_val > 0.02 else "inverse"
-        )
-    
-    # Atmospheric pressure
-    atm_pressure = -worst['total_available_draft']
-    atm_sign = "negative" if atm_pressure < 0 else "positive"
-    
-    st.info(f"**Pressure vs. Atmosphere:** {atm_pressure:.4f} in w.c. ({atm_sign})  \n"
-            f"*Note: Positive available draft = Negative to atmosphere*")
-    
-    # Category compliance
-    if worst['appliance']['category'] != 'custom':
-        pressure_check = calc.check_appliance_pressure_limits(
-            worst['appliance'],
-            worst['total_available_draft']
-        )
-        
-        if pressure_check['compliant']:
-            st.markdown(f"""
-            <div class="success-box">
-            <strong>✓ {pressure_check['message']}</strong><br>
-            Category: {pressure_check['category']}<br>
-            Required: {pressure_check['required_range'][0]} to {pressure_check['required_range'][1]} in w.c.
-            </div>
-            """, unsafe_allow_html=True)
+Would you like to start a new analysis? (Type 'yes' to start over)
+"""
+                
+                add_message("assistant", results_msg)
+                
+            except Exception as e:
+                st.session_state.current_step = 'error'
+                add_message("assistant", f"⚠️ Error during analysis: {str(e)}\n\nPlease start over. Type 'restart' to begin again.")
         else:
-            st.markdown(f"""
-            <div class="danger-box">
-            <strong>✗ {pressure_check['message']}</strong><br>
-            Category: {pressure_check['category']}<br>
-            Required: {pressure_check['required_range'][0]} to {pressure_check['required_range'][1]} in w.c.<br>
-            <strong>⚠ {pressure_check['recommendation']}</strong>
-            </div>
-            """, unsafe_allow_html=True)
+            add_message("assistant", "Please enter 1 for Yes or 2 for No.")
     
-    # Seasonal variation estimate
-    st.markdown("### 🌡️ Estimated Seasonal Draft Variation")
-    
-    available = result['all_operating']['common_vent']['available_draft_inwc']
-    winter_draft = available * 1.4
-    summer_draft = available * 0.6
-    
-    st.markdown(f"""
-    <div class="warning-box">
-    <strong>Based on steady-state calculation at {st.session_state.temp_outside}°F:</strong><br>
-    <ul>
-        <li>Winter (0°F outside): ~{winter_draft:.4f} in w.c. (high draft)</li>
-        <li>Design ({st.session_state.temp_outside}°F outside): ~{available:.4f} in w.c. (calculated)</li>
-        <li>Summer (95°F outside): ~{summer_draft:.4f} in w.c. (low draft)</li>
-        <li><strong>Variation range: {abs(winter_draft - summer_draft):.4f} in w.c. swing!</strong></li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # US Draft Co. Recommendations
-    st.markdown("---")
-    st.markdown("## 🛠️ US Draft Co. Draft Control Recommendations")
-    
-    worst_category = worst['appliance'].get('category', 'custom')
-    
-    if worst_category == 'cat_i_fan':
-        st.markdown("### Category I - Fan Assisted")
-        if available > 0.10:
-            st.markdown("""
-            <div class="info-box">
-            <h4>RECOMMENDED: Barometric Damper</h4>
-            <ul>
-                <li>Traditional solution for Cat I over-draft</li>
-                <li>Mechanical regulation of excess draft</li>
-                <li>Prevents over-firing in cold weather</li>
-                <li>Cost-effective for Cat I applications</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        elif available < 0:
-            st.markdown(f"""
-            <div class="info-box">
-            <h4>RECOMMENDED: US Draft Co. Draft Inducer</h4>
-            <ul>
-                <li>Provides mechanical draft to overcome {abs(available):.4f} in w.c. deficit</li>
-                <li>Ensures consistent operation regardless of weather</li>
-                <li>Reliable performance for Cat I applications</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
+    elif st.session_state.current_step == 'results':
+        if user_input.lower() in ['yes', 'restart', 'new', 'start over']:
+            # Reset everything
+            st.session_state.messages = []
+            st.session_state.current_step = 'welcome'
+            st.session_state.project_data = {
+                'appliances': [],
+                'elevation_ft': 0,
+                'temp_outside_f': 70,
+                'connector_configs': [],
+                'manifold_config': None
+            }
+            if 'results' in st.session_state:
+                del st.session_state['results']
         else:
-            st.markdown("""
-            <div class="info-box">
-            <h4>RECOMMENDED: Barometric Damper</h4>
-            <ul>
-                <li>Regulates natural draft variations</li>
-                <li>Protects against seasonal over-draft</li>
-                <li>Standard solution for Cat I appliances</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            add_message("assistant", "Type 'yes' or 'restart' to start a new analysis.")
     
-    elif worst_category in ['cat_ii', 'cat_iii', 'cat_iv']:
-        cat_name = calc.appliance_categories[worst_category]['name']
-        st.markdown(f"### {cat_name}")
-        st.markdown(f"""
-        <div class="success-box">
-        <h4>REQUIRED: US Draft Co. CDS3 Connector Draft System</h4>
-        <ul>
-            <li>Maintains PERFECT DRAFT at the appliance outlet</li>
-            <li>EC-Flow Technology - industry leading precision</li>
-            <li>Bi-directional pressure control (positive or negative)</li>
-            <li>2-second actuator responds to pressure changes</li>
-            <li>4" color touchscreen - displays pressure & setpoint</li>
-            <li>Protects against flue gas recirculation</li>
-            <li>Meets National & International Fuel Gas Codes</li>
-        </ul>
-        <p><strong>⚠️ CRITICAL:</strong> Barometric dampers are NOT suitable for Category II, III, or IV appliances!</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    ---
-    ### 📞 Contact US Draft Co.
-    **US Draft by RM Manifold**  
-    100 S Sylvania Ave, Fort Worth, TX 76111  
-    Phone: **817-393-4029**  
-    Web: [www.usdraft.com](https://www.usdraft.com)
-    """)
-    
-    # Action buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 New Analysis", use_container_width=True):
-            st.session_state.appliances = []
-            st.session_state.step = 1
-            st.session_state.results = None
-            st.rerun()
-    with col2:
-        # Download results as JSON
-        results_json = {
-            'appliances': st.session_state.appliances,
-            'connector': st.session_state.connector_configs[0],
-            'manifold': st.session_state.manifold_config,
-            'temperature': st.session_state.temp_outside,
-            'total_available_draft': worst['total_available_draft'],
-            'scenarios': scenarios_data
-        }
-        st.download_button(
-            label="📥 Download Results (JSON)",
-            data=json.dumps(results_json, indent=2),
-            file_name="carl_analysis.json",
-            mime="application/json",
-            use_container_width=True
-        )
+    st.rerun()
 
 # Footer
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666;'>
-<p><strong>CARL v1.0 Beta</strong> - Chimney Analysis and Reasoning Layer<br>
-© 2025 US Draft by RM Manifold | Fort Worth, TX<br>
-<em>For professional venting system design and analysis</em></p>
-</div>
-""", unsafe_allow_html=True)
+st.caption("CARL v1.0 Beta | US Draft by RM Manifold | 817-393-4029")
