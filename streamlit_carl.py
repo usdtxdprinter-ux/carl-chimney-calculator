@@ -873,6 +873,9 @@ elif st.session_state.step == 'analyzing':
                 'fittings': st.session_state.data['manifold_fittings']
             }
             
+            # Debug info
+            st.write(f"✓ Analyzing {len(st.session_state.data['appliances'])} appliances...")
+            
             # Run analysis
             result = calc.complete_multi_appliance_analysis(
                 appliances=st.session_state.data['appliances'],
@@ -880,6 +883,35 @@ elif st.session_state.step == 'analyzing':
                 manifold_config=manifold_config,
                 temp_outside_f=st.session_state.data['temp_outside_f']
             )
+            
+            # Debug: Show what was returned
+            st.write("✓ Analysis complete")
+            st.write(f"Result type: {type(result)}")
+            st.write(f"Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            
+            # Check each scenario
+            if isinstance(result, dict):
+                st.write(f"- all_operating: {type(result.get('all_operating'))}")
+                st.write(f"- all_minus_one: {type(result.get('all_minus_one'))}")
+                st.write(f"- single_largest: {type(result.get('single_largest'))}")
+                st.write(f"- single_smallest: {type(result.get('single_smallest'))}")
+                st.write(f"- worst_case: {type(result.get('worst_case'))}")
+            
+            # Verify results exist
+            if not result or 'worst_case' not in result:
+                st.error("Analysis returned incomplete results")
+                st.write("Debug: Missing 'worst_case' key")
+                if st.button("⬅️ Back to Manifold", key="btn_error_back"):
+                    st.session_state.step = 'manifold_fittings'
+                    st.rerun()
+                st.stop()
+            
+            if not result.get('all_operating'):
+                st.error("Analysis returned no 'all_operating' scenario")
+                if st.button("⬅️ Back to Manifold", key="btn_error_all_op"):
+                    st.session_state.step = 'manifold_fittings'
+                    st.rerun()
+                st.stop()
             
             # Calculate combustion air
             comb_air = calculate_combustion_air(
@@ -897,10 +929,21 @@ elif st.session_state.step == 'analyzing':
             st.session_state.step = 'results'
             st.rerun()
             
+        except KeyError as e:
+            st.error(f"Missing data key: {str(e)}")
+            st.write("Debug info:")
+            st.write("- Appliances configured:", len(st.session_state.data.get('appliances', [])))
+            st.write("- Connector diameter:", st.session_state.data.get('connector_diameter'))
+            st.write("- Manifold diameter:", st.session_state.data.get('manifold_diameter'))
+            if st.button("⬅️ Back to Manifold", key="btn_error_keyerror_back"):
+                st.session_state.step = 'manifold_fittings'
+                st.rerun()
         except Exception as e:
             st.error(f"Analysis Error: {str(e)}")
-            st.write("Please check your inputs and try again.")
-            if st.button("⬅️ Back to Manifold", key="btn_error_back"):
+            st.write("Error type:", type(e).__name__)
+            import traceback
+            st.code(traceback.format_exc())
+            if st.button("⬅️ Back to Manifold", key="btn_error_general_back"):
                 st.session_state.step = 'manifold_fittings'
                 st.rerun()
 
@@ -996,14 +1039,14 @@ elif st.session_state.step == 'results':
     st.write("**Operating Scenarios:**")
     
     scenarios = [
-        ('All Appliances', result['all_operating']),
-        ('All Minus One', result['all_minus_one']),
-        ('Single Largest', result['single_largest']),
-        ('Single Smallest', result['single_smallest'])
+        ('All Appliances', result.get('all_operating')),
+        ('All Minus One', result.get('all_minus_one')),
+        ('Single Largest', result.get('single_largest')),
+        ('Single Smallest', result.get('single_smallest'))
     ]
     
     for name, scenario in scenarios:
-        if scenario:
+        if scenario and scenario is not None:
             cfm = scenario['combined']['total_cfm']
             vel = scenario['common_vent']['velocity_fps'] * 60
             draft = scenario['common_vent']['available_draft_inwc']
