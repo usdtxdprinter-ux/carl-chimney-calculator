@@ -1359,16 +1359,28 @@ elif st.session_state.step == 'results':
     
     # Decision Logic from US Draft Training Document
     # Step 1: Determine draft condition
+    # 
+    # CRITICAL UNDERSTANDING:
+    # - Atmospheric pressure POSITIVE = Not enough draft = Need INDUCER (VCS)
+    # - Atmospheric pressure NEGATIVE = Too much draft = Need DAMPER (ODCS)
+    # 
+    # Category limits are for atmospheric pressure:
+    # Example Cat II: -0.08 to -0.03 in w.c. (negative = natural draft pulling)
+    
     if atm_pressure_check > cat_limits[1]:
-        # Excessive draft (too positive atmospheric pressure = too negative draft)
-        draft_condition = "EXCESSIVE DRAFT"
-        need_odcs = True
-        need_vcs = False
-    elif atm_pressure_check < cat_limits[0]:
-        # Insufficient draft (too negative atmospheric pressure = too positive draft)
+        # Atmospheric pressure TOO POSITIVE (above upper limit)
+        # Means: Not enough draft pulling on appliance
+        # Solution: Need draft inducer to pull harder
         draft_condition = "INSUFFICIENT DRAFT"
         need_odcs = False
         need_vcs = True
+    elif atm_pressure_check < cat_limits[0]:
+        # Atmospheric pressure TOO NEGATIVE (below lower limit)  
+        # Means: Too much draft pulling on appliance
+        # Solution: Need overdraft control to reduce pull
+        draft_condition = "EXCESSIVE DRAFT"
+        need_odcs = True
+        need_vcs = False
     else:
         # Within range but could be marginal
         draft_condition = "ADEQUATE DRAFT"
@@ -1376,8 +1388,33 @@ elif st.session_state.step == 'results':
         need_vcs = False
     
     st.write(f"**Draft Analysis:** {draft_condition}")
-    st.write(f"**Atmospheric Pressure:** {atm_pressure_check:.4f} in w.c.")
-    st.write(f"**Category Limits:** {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.")
+    st.write(f"**Atmospheric Pressure at Appliance:** {atm_pressure_check:.4f} in w.c.")
+    st.write(f"**Category {cat_info.get('name', 'Unknown')} Limits:** {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.")
+    st.write("")
+    
+    # Show interpretation
+    with st.expander("ℹ️ Understanding Draft vs Atmospheric Pressure"):
+        st.write("**Key Concept:**")
+        st.write("- **Negative** atmospheric pressure (e.g., -0.05) = Draft is **pulling** on appliance = Good for natural draft")
+        st.write("- **Positive** atmospheric pressure (e.g., +0.05) = **Pushing** on appliance = Not enough draft")
+        st.write("")
+        st.write("**What This Means:**")
+        if atm_pressure_check > cat_limits[1]:
+            st.write(f"- Your system: {atm_pressure_check:.4f} in w.c. (too positive)")
+            st.write(f"- Upper limit: {cat_limits[1]:.2f} in w.c.")
+            st.write(f"- **Problem:** Not enough draft pulling on appliance")
+            st.write(f"- **Solution:** Draft inducer needed to create more pull")
+        elif atm_pressure_check < cat_limits[0]:
+            st.write(f"- Your system: {atm_pressure_check:.4f} in w.c. (too negative)")
+            st.write(f"- Lower limit: {cat_limits[0]:.2f} in w.c.")
+            st.write(f"- **Problem:** Too much draft pulling on appliance")
+            st.write(f"- **Solution:** Overdraft control needed to reduce pull")
+        else:
+            st.write(f"- Your system: {atm_pressure_check:.4f} in w.c.")
+            st.write(f"- Limits: {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.")
+            st.write(f"- **Status:** Within acceptable range")
+            st.write(f"- **Recommendation:** Controls recommended for seasonal stability")
+    
     st.write("")
     
     # ========================================================================
