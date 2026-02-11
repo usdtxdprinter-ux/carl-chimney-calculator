@@ -5,6 +5,7 @@ Complete Chatbot Interface with Button Controls and PDF Reports
 
 import streamlit as st
 from enhanced_calculator import EnhancedChimneyCalculator
+import pandas as pd
 import json
 from datetime import datetime
 from io import BytesIO
@@ -978,89 +979,194 @@ elif st.session_state.step == 'results':
             st.rerun()
         st.stop()
     
-    # Project Header
-    st.markdown("---")
-    st.markdown(f"### 📋 {st.session_state.data['project_name']}")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.write(f"**Location:** {st.session_state.data['city']}, {st.session_state.data['state']}")
-        st.write(f"**ZIP:** {st.session_state.data['zip_code']}")
-    with col2:
-        st.write(f"**Elevation:** {st.session_state.data['elevation_ft']:,} ft")
-        st.write(f"**Barometric:** {st.session_state.data['barometric_pressure']:.2f} in Hg")
-    with col3:
-        st.write(f"**Vent Type:** {st.session_state.data['vent_type']}")
-        st.write(f"**Outside Temp:** {st.session_state.data['temp_outside_f']}°F")
     
-    st.markdown("---")
+    # ========================================================================
+    # PROJECT SUMMARY TABLE
+    # ========================================================================
+    st.markdown("## 📋 Project Summary")
     
-    # Appliances Summary
-    st.markdown("### 🔥 Appliances")
+    project_data = {
+        "Item": [
+            "Project Name",
+            "Location", 
+            "Elevation",
+            "Barometric Pressure",
+            "Vent Type",
+            "Outside Design Temperature",
+            "Number of Appliances",
+            "Analysis Date"
+        ],
+        "Value": [
+            st.session_state.data['project_name'],
+            f"{st.session_state.data['city']}, {st.session_state.data['state']} {st.session_state.data['zip_code']}",
+            f"{st.session_state.data['elevation_ft']:,} ft",
+            f"{st.session_state.data['barometric_pressure']:.2f} in Hg",
+            st.session_state.data['vent_type'],
+            f"{st.session_state.data['temp_outside_f']}°F",
+            str(st.session_state.data['num_appliances']),
+            datetime.now().strftime('%B %d, %Y at %I:%M %p')
+        ]
+    }
+    
+    st.table(pd.DataFrame(project_data))
+    
+    # ========================================================================
+    # APPLIANCES TABLE
+    # ========================================================================
+    st.markdown("## 🔥 Appliance Configuration")
+    
     total_mbh = sum(app['mbh'] for app in st.session_state.data['appliances'])
-    st.write(f"**Total Input:** {total_mbh:,.0f} MBH ({st.session_state.data['num_appliances']} appliances)")
+    st.write(f"**Total System Input:** {total_mbh:,.0f} MBH")
+    st.write("")
+    
+    appliance_data = {
+        "Appliance": [],
+        "Input (MBH)": [],
+        "Category": [],
+        "CO₂ (%)": [],
+        "Flue Temp (°F)": [],
+        "Fuel Type": [],
+        "Outlet Dia (\")": []
+    }
     
     for app in st.session_state.data['appliances']:
         cat_name = calc.appliance_categories[app['category']]['name']
-        st.write(f"**Appliance #{app['appliance_number']}:** {app['mbh']} MBH | {cat_name} | {app['co2_percent']}% CO₂ | {app['temp_f']}°F | {app['fuel_type'].replace('_', ' ').title()}")
+        fuel_name = app['fuel_type'].replace('_', ' ').title()
+        
+        appliance_data["Appliance"].append(f"#{app['appliance_number']}")
+        appliance_data["Input (MBH)"].append(f"{app['mbh']:,.0f}")
+        appliance_data["Category"].append(cat_name)
+        appliance_data["CO₂ (%)"].append(f"{app['co2_percent']}")
+        appliance_data["Flue Temp (°F)"].append(f"{app['temp_f']}")
+        appliance_data["Fuel Type"].append(fuel_name)
+        appliance_data["Outlet Dia (\")"].append(f"{app['outlet_diameter']}")
     
-    st.markdown("---")
+    st.table(pd.DataFrame(appliance_data))
     
-    # Connector Configuration
-    st.markdown("### 🔌 Connector Configuration")
-    st.write(f"**Worst-Case:** Appliance #{worst['appliance_id']}")
-    st.write(f"**Diameter:** {st.session_state.data['connector_diameter']}\"")
-    st.write(f"**Length:** {st.session_state.data['connector_length']} ft (Height: {st.session_state.data['connector_height']} ft)")
+    # ========================================================================
+    # CONNECTOR CONFIGURATION TABLE
+    # ========================================================================
+    st.markdown("## 🔌 Connector Configuration")
+    st.write(f"**Worst-Case Connector:** Appliance #{worst['appliance_id']}")
+    st.write("")
     
+    # Build fittings list
     fittings_list = []
     for fitting, count in st.session_state.data['connector_fittings'].items():
         if fitting != 'entrance':
-            fittings_list.append(f"{count} {fitting.replace('_', ' ')}")
-    st.write(f"**Fittings:** {', '.join(fittings_list) if fittings_list else 'Entrance only'}")
+            fittings_list.append(f"{count}× {fitting.replace('_', ' ')}")
+    fittings_str = ', '.join(fittings_list) if fittings_list else 'None'
     
-    st.markdown("---")
+    horiz_run = st.session_state.data['connector_length'] - st.session_state.data['connector_height']
     
-    # Manifold Configuration
-    st.markdown("### 🏗️ Common Vent (Manifold)")
+    connector_config = {
+        "Parameter": [
+            "Diameter",
+            "Total Length",
+            "Vertical Height",
+            "Horizontal Run",
+            "Fittings"
+        ],
+        "Value": [
+            f"{st.session_state.data['connector_diameter']}\"",
+            f"{st.session_state.data['connector_length']} ft",
+            f"{st.session_state.data['connector_height']} ft",
+            f"{horiz_run} ft",
+            fittings_str
+        ]
+    }
+    
+    st.table(pd.DataFrame(connector_config))
+    
+    # Connector Results
+    st.markdown("### Connector Analysis Results")
+    connector_results = {
+        "Metric": ["Draft", "Velocity"],
+        "Value": [
+            f"{worst['connector_draft']:.4f} in w.c.",
+            f"{worst['connector_result']['connector']['velocity_fps'] * 60:.0f} ft/min"
+        ]
+    }
+    st.table(pd.DataFrame(connector_results))
+    
+    # ========================================================================
+    # MANIFOLD CONFIGURATION TABLE
+    # ========================================================================
+    st.markdown("## 🏗️ Common Vent (Manifold) Configuration")
     
     if st.session_state.data.get('optimize_manifold') and 'optimization_details' in st.session_state.data:
         opt = st.session_state.data['optimization_details']
-        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" ✅ **Optimized by CARL**")
-        st.write(f"**Optimization:** {opt['velocity_fpm']:.0f} ft/min velocity (optimal range)")
-        
-        # Show why this was chosen
-        with st.expander("📊 View Optimization Analysis"):
-            st.write("CARL evaluated these diameters:")
-            for result in opt['all_options']:
-                if result['score'] > 0:
-                    st.write(f"• {result['diameter']}\" → {result['velocity_fpm']:.0f} ft/min - {result['status']}")
-            st.write("")
-            st.write(f"**Selected {opt['recommended_diameter']}\" for optimal velocity and minimal friction loss**")
+        diameter_note = f"{st.session_state.data['manifold_diameter']}\" (Optimized by CARL)"
+        st.success(f"✅ **CARL Optimized:** {opt['recommended_diameter']}\" diameter for {opt['velocity_fpm']:.0f} ft/min velocity")
     else:
-        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" (User Selected)")
-    
-    st.write(f"**Vertical Height:** {st.session_state.data['manifold_height']} ft")
-    st.write(f"**Horizontal Run:** {st.session_state.data['manifold_horizontal']} ft")
-    st.write(f"**Total Length:** {st.session_state.data['manifold_height'] + st.session_state.data['manifold_horizontal']} ft")
-    
-    fittings_list = []
-    for fitting, count in st.session_state.data['manifold_fittings'].items():
-        if fitting != 'exit':
-            fittings_list.append(f"{count} {fitting.replace('_', ' ')}")
-    st.write(f"**Fittings:** {', '.join(fittings_list) if fittings_list else 'Exit only'}")
-    
-    st.markdown("---")
-    
-    # Analysis Results
-    st.markdown("### 📊 Venting Analysis")
-    
-    # Worst Case Connector
-    st.write("**Worst Case Connector:**")
-    st.write(f"- Appliance: #{worst['appliance_id']} ({worst['appliance']['mbh']} MBH)")
-    st.write(f"- Draft: {worst['connector_draft']:.4f} in w.c.")
-    st.write(f"- Velocity: {worst['connector_result']['connector']['velocity_fps'] * 60:.0f} ft/min")
+        diameter_note = f"{st.session_state.data['manifold_diameter']}\" (User Selected)"
     
     st.write("")
-    st.write("**Operating Scenarios:**")
+    
+    # Build fittings list
+    manifold_fittings_list = []
+    for fitting, count in st.session_state.data['manifold_fittings'].items():
+        if fitting != 'exit':
+            manifold_fittings_list.append(f"{count}× {fitting.replace('_', ' ')}")
+    manifold_fittings_str = ', '.join(manifold_fittings_list) if manifold_fittings_list else 'None'
+    
+    total_length = st.session_state.data['manifold_height'] + st.session_state.data['manifold_horizontal']
+    
+    manifold_config = {
+        "Parameter": [
+            "Diameter",
+            "Vertical Height",
+            "Horizontal Run",
+            "Total Length",
+            "Fittings"
+        ],
+        "Value": [
+            diameter_note,
+            f"{st.session_state.data['manifold_height']} ft",
+            f"{st.session_state.data['manifold_horizontal']} ft",
+            f"{total_length} ft",
+            manifold_fittings_str
+        ]
+    }
+    
+    st.table(pd.DataFrame(manifold_config))
+    
+    # Manifold Results
+    st.markdown("### Manifold Analysis Results")
+    manifold_results = {
+        "Metric": ["Draft"],
+        "Value": [f"{worst['manifold_draft']:.4f} in w.c."]
+    }
+    st.table(pd.DataFrame(manifold_results))
+    
+    # Show optimization details if available
+    if st.session_state.data.get('optimize_manifold') and 'optimization_details' in st.session_state.data:
+        with st.expander("📊 View CARL Optimization Analysis"):
+            opt = st.session_state.data['optimization_details']
+            st.write("**Diameters Evaluated:**")
+            opt_data = {
+                "Diameter": [],
+                "Velocity (ft/min)": [],
+                "Status": []
+            }
+            for result in opt['all_options']:
+                if result['score'] > 0:
+                    opt_data["Diameter"].append(f"{result['diameter']}\"")
+                    opt_data["Velocity (ft/min)"].append(f"{result['velocity_fpm']:.0f}")
+                    opt_data["Status"].append(result['status'])
+            st.table(pd.DataFrame(opt_data))
+    
+    # ========================================================================
+    # OPERATING SCENARIOS TABLE
+    # ========================================================================
+    st.markdown("## 📊 Operating Scenarios Analysis")
+    
+    scenario_data = {
+        "Scenario": [],
+        "CFM": [],
+        "Velocity (ft/min)": [],
+        "Draft (in w.c.)": []
+    }
     
     scenarios = [
         ('All Appliances', result.get('all_operating')),
@@ -1074,117 +1180,246 @@ elif st.session_state.step == 'results':
             cfm = scenario['combined']['total_cfm']
             vel = scenario['common_vent']['velocity_fps'] * 60
             draft = scenario['common_vent']['available_draft_inwc']
-            st.write(f"- **{name}:** {cfm:.1f} CFM, {vel:.0f} ft/min, {draft:.4f} in w.c.")
+            
+            scenario_data["Scenario"].append(name)
+            scenario_data["CFM"].append(f"{cfm:.1f}")
+            scenario_data["Velocity (ft/min)"].append(f"{vel:.0f}")
+            scenario_data["Draft (in w.c.)"].append(f"{draft:.4f}")
     
-    st.write("")
-    st.write("**Total System (Connector + Manifold):**")
-    st.write(f"- Connector Draft: {worst['connector_draft']:.4f} in w.c.")
-    st.write(f"- Manifold Draft: {worst['manifold_draft']:.4f} in w.c.")
-    st.write(f"- **TOTAL AVAILABLE DRAFT: {worst['total_available_draft']:.4f} in w.c.**")
+    st.table(pd.DataFrame(scenario_data))
     
-    # Atmospheric pressure
+    # ========================================================================
+    # SYSTEM DRAFT SUMMARY TABLE
+    # ========================================================================
+    st.markdown("## ⚖️ Total System Draft Summary")
+    
     atm_pressure = -worst['total_available_draft']
-    st.write(f"- **Atmospheric Pressure at Appliance: {atm_pressure:.4f} in w.c.**")
     
-    st.info("⚠️ **IMPORTANT:** Positive draft (+) = Negative atmospheric pressure (-) | Negative draft (-) = Positive atmospheric pressure (+)")
+    system_summary = {
+        "Component": [
+            "Connector Draft",
+            "Manifold Draft",
+            "**TOTAL AVAILABLE DRAFT**",
+            "",
+            "**ATMOSPHERIC PRESSURE at Appliance**"
+        ],
+        "Value (in w.c.)": [
+            f"{worst['connector_draft']:.4f}",
+            f"{worst['manifold_draft']:.4f}",
+            f"**{worst['total_available_draft']:.4f}**",
+            "",
+            f"**{atm_pressure:.4f}**"
+        ]
+    }
     
-    # Category compliance
+    st.table(pd.DataFrame(system_summary))
+    
+    st.info("ℹ️ **Important Relationship:** Positive draft (+) = Negative atmospheric pressure (−) | Negative draft (−) = Positive atmospheric pressure (+)")
+    
+    # ========================================================================
+    # CATEGORY COMPLIANCE
+    # ========================================================================
     if worst['appliance']['category'] != 'custom':
+        st.markdown("## ✅ Category Compliance Check")
+        
         cat_info = calc.appliance_categories[worst['appliance']['category']]
         cat_limits = cat_info['pressure_range']
         
-        st.write("")
-        st.write("**Category Compliance:**")
-        st.write(f"- Category: {cat_info['name']}")
-        st.write(f"- Required Atmospheric Pressure: {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.")
-        st.write(f"- Actual Atmospheric Pressure: {atm_pressure:.4f} in w.c.")
+        compliance_data = {
+            "Item": [
+                "Appliance Category",
+                "Required Atmospheric Pressure Range",
+                "Actual Atmospheric Pressure",
+                "Status"
+            ],
+            "Value": [
+                cat_info['name'],
+                f"{cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.",
+                f"{atm_pressure:.4f} in w.c.",
+                "✅ COMPLIANT" if cat_limits[0] <= atm_pressure <= cat_limits[1] else "❌ NON-COMPLIANT"
+            ]
+        }
+        
+        st.table(pd.DataFrame(compliance_data))
         
         if cat_limits[0] <= atm_pressure <= cat_limits[1]:
-            st.success("✅ System meets category requirements")
+            st.success("✅ **System meets category requirements**")
         else:
-            st.error("❌ System does NOT meet category requirements")
-            st.write("**Recommendation:** US Draft Co. draft control required")
+            st.error("❌ **System does NOT meet category requirements**")
+            st.warning("⚠️ **Action Required:** US Draft Co. draft control system needed")
     
-    st.markdown("---")
+    # ========================================================================
+    # SEASONAL VARIATION TABLE
+    # ========================================================================
+    st.markdown("## 🌡️ Seasonal Draft Variation")
     
-    # Seasonal Variation
-    st.markdown("### 🌡️ Seasonal Draft Variation")
-    
-    # Safe access to all_operating scenario
-    if result.get('all_operating') and result['all_operating'].get('common_vent'):
-        available = result['all_operating']['common_vent'].get('available_draft_inwc', 0)
-        winter_draft = available * 1.4
-        summer_draft = available * 0.6
-        
-        st.write("**Estimated Draft Variation:**")
-        st.write(f"- Winter (0°F): ~{winter_draft:.4f} in w.c.")
-        st.write(f"- Design ({st.session_state.data['temp_outside_f']}°F): ~{available:.4f} in w.c.")
-        st.write(f"- Summer (95°F): ~{summer_draft:.4f} in w.c.")
-        st.write(f"- **Variation Range:** {abs(winter_draft - summer_draft):.4f} in w.c. swing")
-        
-        st.warning("⚠️ US Draft Co. draft controls are REQUIRED for consistent year-round performance!")
+    all_op = result.get('all_operating')
+    if all_op and isinstance(all_op, dict) and 'common_vent' in all_op:
+        common_vent = all_op['common_vent']
+        if isinstance(common_vent, dict) and 'available_draft_inwc' in common_vent:
+            available = common_vent['available_draft_inwc']
+            winter_draft = available * 1.4
+            summer_draft = available * 0.6
+            variation_range = abs(winter_draft - summer_draft)
+            
+            seasonal_data = {
+                "Condition": [
+                    "Winter (0°F)",
+                    f"Design ({st.session_state.data['temp_outside_f']}°F)",
+                    "Summer (95°F)",
+                    "",
+                    "**Total Variation**"
+                ],
+                "Draft (in w.c.)": [
+                    f"{winter_draft:.4f}",
+                    f"{available:.4f}",
+                    f"{summer_draft:.4f}",
+                    "",
+                    f"**{variation_range:.4f}**"
+                ],
+                "Change from Design": [
+                    "+40% (Higher draft)",
+                    "Calculated value",
+                    "−40% (Lower draft)",
+                    "",
+                    "**80% total swing**"
+                ]
+            }
+            
+            st.table(pd.DataFrame(seasonal_data))
+            
+            st.error("⚠️ **CRITICAL:** Draft varies 80% throughout the year! US Draft Co. controls are REQUIRED for safe, consistent operation.")
+        else:
+            st.warning("⚠️ Seasonal variation data incomplete - draft controls still recommended")
     else:
         st.warning("⚠️ Seasonal variation data not available - draft controls still recommended")
     
-    st.markdown("---")
+    # ========================================================================
+    # COMBUSTION AIR REQUIREMENTS
+    # ========================================================================
+    st.markdown("## 💨 Combustion Air Requirements")
     
-    # Combustion Air
-    st.markdown("### 💨 Combustion Air Requirements")
     comb_air = st.session_state.data['combustion_air']
     louvers = st.session_state.data['louvers']
     
-    st.write(f"**Total Combustion Air:** {comb_air['combustion_air_cfm']:.0f} CFM at {comb_air['ambient_temp']}°F")
-    
+    st.write(f"**Total Combustion Air Required:** {comb_air['combustion_air_cfm']:.0f} CFM at {comb_air['ambient_temp']}°F")
     st.write("")
-    st.write("**Method 1: Single Louver**")
-    st.write(f"- Required Free Area: {louvers['single_louver']['free_area_sqin']:.1f} sq in")
-    st.write(f"- Louver Size (75% free area): {louvers['single_louver']['louver_size_sqin']:.1f} sq in")
-    st.write(f"- **Recommended:** {louvers['single_louver']['recommended_dimensions']} louver")
     
-    st.write("")
-    st.write("**Method 2: Two Louver (High/Low)**")
-    st.write(f"- Free Area Each: {louvers['two_louver']['free_area_each_sqin']:.1f} sq in")
-    st.write(f"- Louver Size Each: {louvers['two_louver']['louver_size_each_sqin']:.1f} sq in")
-    st.write(f"- **Recommended:** Two {louvers['two_louver']['recommended_dimensions']} louvers")
-    st.write("  (One within 12\" of ceiling, one within 12\" of floor)")
+    # Single Louver Method
+    st.markdown("### Method 1: Single Louver")
     
-    st.markdown("---")
+    single_louver_data = {
+        "Parameter": [
+            "Required Free Area",
+            "Louver Size (75% free area)",
+            "**RECOMMENDED**"
+        ],
+        "Value": [
+            f"{louvers['single_louver']['free_area_sqin']:.1f} sq in",
+            f"{louvers['single_louver']['louver_size_sqin']:.1f} sq in",
+            f"**{louvers['single_louver']['recommended_dimensions']}**"
+        ]
+    }
+    st.table(pd.DataFrame(single_louver_data))
     
-    # US Draft Co. Recommendations
-    st.markdown("### 🏢 US Draft Co. Product Recommendations")
+    # Two Louver Method
+    st.markdown("### Method 2: Two Louver (High/Low)")
+    st.caption("One louver within 12\" of ceiling, one within 12\" of floor")
+    
+    two_louver_data = {
+        "Parameter": [
+            "Free Area (Each Louver)",
+            "Louver Size Each (75% free area)",
+            "**RECOMMENDED (Each)**",
+            "**TOTAL REQUIRED**"
+        ],
+        "Value": [
+            f"{louvers['two_louver']['free_area_each_sqin']:.1f} sq in",
+            f"{louvers['two_louver']['louver_size_each_sqin']:.1f} sq in",
+            f"**{louvers['two_louver']['recommended_dimensions']}**",
+            f"**Two louvers @ {louvers['two_louver']['recommended_dimensions']} each**"
+        ]
+    }
+    st.table(pd.DataFrame(two_louver_data))
+    
+    # ========================================================================
+    # US DRAFT CO. RECOMMENDATIONS
+    # ========================================================================
+    st.markdown("## 🏢 US Draft Co. Product Recommendations")
     
     # Determine recommendation based on category and pressure
     if worst['appliance']['category'] in ['cat_ii', 'cat_iii', 'cat_iv']:
-        st.write("**Recommended Product: CDS3 - Connector Draft System**")
-        st.write("- Maintains precise pressure at appliance outlet")
-        st.write("- EC-Flow Technology with 2-second actuator")
-        st.write("- Required for Category II, III, and IV appliances")
-        st.write("- 4\" color touchscreen interface")
+        st.success("**Recommended Product: CDS3 - Connector Draft System**")
+        st.write("")
+        
+        cds3_features = {
+            "Feature": [
+                "Application",
+                "Control Method",
+                "Technology",
+                "Response Time",
+                "User Interface",
+                "Damper Type",
+                "Connections",
+                "Optional Feature"
+            ],
+            "Specification": [
+                "Category II, III, and IV appliances",
+                "Maintains precise pressure at appliance outlet",
+                "EC-Flow with bi-directional pressure transducer",
+                "2-second actuator (industry leading)",
+                "4\" color touchscreen display",
+                "Single Blade Damper (SBD) with butterfly actuator",
+                "Standard 1/2\" flanges and v-band connections",
+                "'G' model with Viton seal prevents backflow"
+            ]
+        }
+        
+        st.table(pd.DataFrame(cds3_features))
+        
     else:
+        cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
+        cat_limits = cat_info.get('pressure_range', (0, 0))
+        
         if atm_pressure < cat_limits[0]:
-            st.write("**Recommended Product: Barometric Damper**")
+            st.success("**Recommended Product: Barometric Damper**")
             st.write("- Controls excessive draft")
-            st.write("- Simple, reliable solution")
-            st.write("- Cost-effective for Category I appliances")
+            st.write("- Simple, reliable, cost-effective solution")
+            st.write("- Ideal for Category I appliances with over-draft")
         elif atm_pressure > cat_limits[1]:
-            st.write("**Recommended Product: Draft Inducer**")
+            st.warning("**Recommended Product: Draft Inducer**")
             st.write("- Overcomes insufficient natural draft")
             st.write("- Up to 0.75 in w.c. capacity")
             st.write("- Required when system cannot produce adequate draft")
         else:
-            st.write("**System Status:** Within acceptable range")
+            st.info("**System Status:** Within acceptable range")
             st.write("- Consider barometric damper for seasonal stability")
-            st.write("- US Draft Co. controls ensure year-round performance")
-    
-    st.write("")
-    st.write("**Contact US Draft Co.:**")
-    st.write("📞 817-393-4029")
-    st.write("🌐 www.usdraft.com")
-    st.write("📍 100 S Sylvania Ave, Fort Worth, TX 76111")
+            st.write("- US Draft Co. controls ensure year-round reliable performance")
     
     st.markdown("---")
+    st.markdown("### 📞 Contact Information")
     
-    # Action Buttons
+    contact_data = {
+        "": [
+            "Company",
+            "Address",
+            "Phone",
+            "Website"
+        ],
+        " ": [
+            "US Draft by RM Manifold",
+            "100 S Sylvania Ave, Fort Worth, TX 76111",
+            "817-393-4029",
+            "www.usdraft.com"
+        ]
+    }
+    st.table(pd.DataFrame(contact_data))
+    
+    # ========================================================================
+    # ACTION BUTTONS
+    # ========================================================================
+    st.markdown("---")
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 New Analysis", key="btn_new_analysis", use_container_width=True):
@@ -1194,9 +1429,6 @@ elif st.session_state.step == 'results':
             st.rerun()
     with col2:
         st.info("📄 PDF Report Generation - Coming Soon!")
-        # if st.button("📄 Download PDF Report", key="btn_download_pdf", use_container_width=True):
-        #     st.session_state.step = 'generate_pdf'
-        #     st.rerun()
 
 # Footer
 st.markdown("---")
