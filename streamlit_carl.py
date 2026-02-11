@@ -312,13 +312,28 @@ if user_input:
             length = float(user_input)
             if length > 0:
                 st.session_state.temp_connector_length = length
-                st.session_state.current_step = 'connector_90'
-                response = f"Connector length: {length} ft\n\nHow many 90° elbows? (Enter a whole number)"
+                st.session_state.current_step = 'connector_height'
+                response = f"Connector length: {length} ft\n\nWhat is the vertical height (rise) of the connector in feet?\n\n(This contributes to theoretical draft. Enter 0 if horizontal only)"
                 add_message("assistant", response)
             else:
                 add_message("assistant", "Please enter a positive length.")
         except:
             add_message("assistant", "Please enter a valid length in feet.")
+    
+    elif st.session_state.current_step == 'connector_height':
+        try:
+            height = float(user_input)
+            if height >= 0 and height <= st.session_state.temp_connector_length:
+                st.session_state.temp_connector_height = height
+                st.session_state.current_step = 'connector_90'
+                response = f"Connector height: {height} ft\n\nHow many 90° elbows? (Enter a whole number)"
+                add_message("assistant", response)
+            elif height > st.session_state.temp_connector_length:
+                add_message("assistant", f"Height ({height} ft) cannot be greater than total length ({st.session_state.temp_connector_length} ft).")
+            else:
+                add_message("assistant", "Please enter 0 or a positive height.")
+        except:
+            add_message("assistant", "Please enter a valid height in feet.")
     
     elif st.session_state.current_step == 'connector_90':
         try:
@@ -395,7 +410,7 @@ if user_input:
                     st.session_state.project_data['connector_configs'].append({
                         'diameter_inches': st.session_state.temp_connector_dia,
                         'length_ft': st.session_state.temp_connector_length,
-                        'height_ft': 0,
+                        'height_ft': st.session_state.temp_connector_height,
                         'fittings': fittings.copy()
                     })
                 
@@ -591,14 +606,26 @@ Appliance #{worst['appliance_id']} ({worst['appliance']['mbh']} MBH)
                         draft = scenario['common_vent']['available_draft_inwc']
                         results_msg += f"\n{name}: {cfm:.1f} CFM, {vel:.0f} ft/min, {draft:.4f} in w.c."
                 
+                # Calculate atmospheric pressure (opposite sign of draft)
+                atm_pressure = -worst['total_available_draft']
+                
                 results_msg += f"""
 
 **TOTAL SYSTEM (Connector + Manifold)**
 - Connector Draft: {worst['connector_draft']:.4f} in w.c.
 - Manifold Draft: {worst['manifold_draft']:.4f} in w.c.
-- **TOTAL AVAILABLE: {worst['total_available_draft']:.4f} in w.c.**
+- **TOTAL AVAILABLE DRAFT: {worst['total_available_draft']:.4f} in w.c.**
 
-Pressure vs. Atmosphere: {-worst['total_available_draft']:.4f} in w.c.
+**PRESSURE AT APPLIANCE OUTLET**
+- Atmospheric Pressure: {atm_pressure:.4f} in w.c.
+
+⚠️ **IMPORTANT:** 
+Positive draft (+) = Negative atmospheric pressure (-)
+Negative draft (-) = Positive atmospheric pressure (+)
+
+Available draft shows system capability.
+Atmospheric pressure shows what appliance experiences.
+Category limits are specified as atmospheric pressure.
 """
                 
                 # Category compliance
@@ -607,7 +634,18 @@ Pressure vs. Atmosphere: {-worst['total_available_draft']:.4f} in w.c.
                         worst['appliance'],
                         worst['total_available_draft']
                     )
-                    results_msg += f"\n**Compliance:** {pressure_check['message']}"
+                    
+                    cat_info = calc.appliance_categories[worst['appliance']['category']]
+                    cat_limits = cat_info['pressure_range']
+                    
+                    results_msg += f"\n**CATEGORY COMPLIANCE CHECK**"
+                    results_msg += f"\nAppliance Category: {cat_info['name']}"
+                    results_msg += f"\nRequired atmospheric pressure: {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c."
+                    results_msg += f"\nActual atmospheric pressure: {atm_pressure:.4f} in w.c."
+                    results_msg += f"\nStatus: {pressure_check['message']}"
+                    
+                    if not pressure_check['compliant']:
+                        results_msg += f"\n⚠️ {pressure_check['recommendation']}"
                 
                 # Seasonal variation
                 available = result['all_operating']['common_vent']['available_draft_inwc']
