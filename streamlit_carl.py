@@ -637,18 +637,31 @@ elif st.session_state.step == 'connector_length':
 # STEP: Connector Fittings
 elif st.session_state.step == 'connector_fittings':
     st.subheader("🔌 Connector - Fittings")
+    st.write(f"**Vent Type:** {st.session_state.data['vent_type']}")
     st.write(f"**Length:** {st.session_state.data['connector_length']} ft (Height: {st.session_state.data['connector_height']} ft)")
     
-    st.write("Enter the number of each fitting type:")
+    st.write("**Enter the number of each fitting type:**")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        num_90 = st.number_input("90° Elbows:", min_value=0, max_value=10, value=0, step=1)
-        num_45 = st.number_input("45° Elbows:", min_value=0, max_value=10, value=0, step=1)
-        num_30 = st.number_input("30° Elbows:", min_value=0, max_value=10, value=0, step=1)
+        st.write("**Elbows:**")
+        num_15 = st.number_input("15° Elbows:", min_value=0, max_value=20, value=0, step=1, key="conn_15")
+        num_30 = st.number_input("30° Elbows:", min_value=0, max_value=20, value=0, step=1, key="conn_30")
+        num_45 = st.number_input("45° Elbows:", min_value=0, max_value=20, value=0, step=1, key="conn_45")
+        num_90 = st.number_input("90° Elbows:", min_value=0, max_value=20, value=0, step=1, key="conn_90")
+    
     with col2:
-        num_90tee = st.number_input("90° Tees (flow through):", min_value=0, max_value=10, value=0, step=1)
-        num_45tee = st.number_input("45° Lateral Tees:", min_value=0, max_value=10, value=0, step=1)
+        st.write("**Tees:**")
+        num_straight_tee = st.number_input("Straight Tees (flow through):", min_value=0, max_value=10, value=0, step=1, key="conn_straight_tee")
+        num_90tee = st.number_input("90° Tees (change direction):", min_value=0, max_value=10, value=0, step=1, key="conn_90tee")
+        num_lateral = st.number_input("Lateral Tees (45°):", min_value=0, max_value=10, value=0, step=1, key="conn_lateral")
+    
+    with col3:
+        st.write("**Custom Losses:**")
+        additional_k = st.number_input("Additional K Resistance:", min_value=0.0, max_value=10.0, value=0.0, step=0.1, 
+                                      help="Additional dimensionless K-factor for unlisted fittings or devices", key="conn_add_k")
+        additional_pressure = st.number_input("Additional Pressure Loss (in w.c.):", min_value=0.0, max_value=1.0, value=0.0, step=0.001, format="%.4f",
+                                             help="Additional pressure loss in inches water column", key="conn_add_p")
     
     col_back, col_next = st.columns(2)
     with col_back:
@@ -658,13 +671,17 @@ elif st.session_state.step == 'connector_fittings':
     with col_next:
         if st.button("➡️ Next", key="btn_conn_fit_next", use_container_width=True):
             fittings = {'entrance': 1}
-            if num_90 > 0: fittings['90_elbow'] = int(num_90)
-            if num_45 > 0: fittings['45_elbow'] = int(num_45)
+            if num_15 > 0: fittings['15_elbow'] = int(num_15)
             if num_30 > 0: fittings['30_elbow'] = int(num_30)
-            if num_90tee > 0: fittings['90_tee_flow_through'] = int(num_90tee)
-            if num_45tee > 0: fittings['45_tee_lateral'] = int(num_45tee)
+            if num_45 > 0: fittings['45_elbow'] = int(num_45)
+            if num_90 > 0: fittings['90_elbow'] = int(num_90)
+            if num_straight_tee > 0: fittings['straight_tee'] = int(num_straight_tee)
+            if num_90tee > 0: fittings['90_tee_branch'] = int(num_90tee)
+            if num_lateral > 0: fittings['lateral_tee'] = int(num_lateral)
             
             st.session_state.data['connector_fittings'] = fittings
+            st.session_state.data['connector_additional_k'] = additional_k
+            st.session_state.data['connector_additional_pressure'] = additional_pressure
             st.session_state.step = 'manifold_optimize'
             st.rerun()
 
@@ -814,21 +831,37 @@ elif st.session_state.step == 'manifold_height':
 # STEP: Manifold Fittings
 elif st.session_state.step == 'manifold_fittings':
     st.subheader("🏗️ Manifold - Fittings")
+    st.write(f"**Vent Type:** {st.session_state.data['vent_type']}")
     total_length = st.session_state.data['manifold_height'] + st.session_state.data['manifold_horizontal']
     st.write(f"**Total Length:** {total_length} ft ({st.session_state.data['manifold_height']} ft vertical + {st.session_state.data['manifold_horizontal']} ft horizontal)")
     
-    st.write("Enter the number of each fitting type:")
+    st.write("**Enter the number of each fitting type:**")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        num_90 = st.number_input("90° Elbows:", min_value=0, max_value=10, value=0, step=1, key="man_90")
-        num_45 = st.number_input("45° Elbows:", min_value=0, max_value=10, value=0, step=1, key="man_45")
-        num_30 = st.number_input("30° Elbows:", min_value=0, max_value=10, value=0, step=1, key="man_30")
-    with col2:
-        num_90tee = st.number_input("90° Tees (flow through):", min_value=0, max_value=10, value=0, step=1, key="man_90tee")
-        num_45tee = st.number_input("45° Lateral Tees:", min_value=0, max_value=10, value=0, step=1, key="man_45tee")
+        st.write("**Elbows:**")
+        num_15 = st.number_input("15° Elbows:", min_value=0, max_value=20, value=0, step=1, key="man_15")
+        num_30 = st.number_input("30° Elbows:", min_value=0, max_value=20, value=0, step=1, key="man_30")
+        num_45 = st.number_input("45° Elbows:", min_value=0, max_value=20, value=0, step=1, key="man_45")
+        num_90 = st.number_input("90° Elbows:", min_value=0, max_value=20, value=0, step=1, key="man_90")
     
-    has_cap = st.checkbox("Termination Cap?", value=True)
+    with col2:
+        st.write("**Tees:**")
+        num_straight_tee = st.number_input("Straight Tees (flow through):", min_value=0, max_value=10, value=0, step=1, key="man_straight_tee")
+        num_90tee = st.number_input("90° Tees (change direction):", min_value=0, max_value=10, value=0, step=1, key="man_90tee")
+        num_lateral = st.number_input("Lateral Tees (45°):", min_value=0, max_value=10, value=0, step=1, key="man_lateral")
+        num_tee_cap = st.number_input("Tee Caps (dead end branches):", min_value=0, max_value=10, value=0, step=1, key="man_tee_cap",
+                                      help="Cap on unused tee branch")
+    
+    with col3:
+        st.write("**Termination & Custom:**")
+        has_term_cap = st.checkbox("Termination Cap at top?", value=True, key="man_term_cap",
+                                   help="Cap at top of chimney/vent")
+        st.write("")
+        additional_k = st.number_input("Additional K Resistance:", min_value=0.0, max_value=10.0, value=0.0, step=0.1,
+                                      help="Additional dimensionless K-factor", key="man_add_k")
+        additional_pressure = st.number_input("Additional Pressure Loss (in w.c.):", min_value=0.0, max_value=1.0, value=0.0, step=0.001, format="%.4f",
+                                             help="Additional pressure loss", key="man_add_p")
     
     col_back, col_next = st.columns(2)
     with col_back:
@@ -838,14 +871,19 @@ elif st.session_state.step == 'manifold_fittings':
     with col_next:
         if st.button("🔍 Run Analysis", key="btn_run_analysis", use_container_width=True):
             fittings = {'exit': 1}
-            if num_90 > 0: fittings['90_elbow'] = int(num_90)
-            if num_45 > 0: fittings['45_elbow'] = int(num_45)
+            if num_15 > 0: fittings['15_elbow'] = int(num_15)
             if num_30 > 0: fittings['30_elbow'] = int(num_30)
-            if num_90tee > 0: fittings['90_tee_flow_through'] = int(num_90tee)
-            if num_45tee > 0: fittings['45_tee_lateral'] = int(num_45tee)
-            if has_cap: fittings['termination_cap'] = 1
+            if num_45 > 0: fittings['45_elbow'] = int(num_45)
+            if num_90 > 0: fittings['90_elbow'] = int(num_90)
+            if num_straight_tee > 0: fittings['straight_tee'] = int(num_straight_tee)
+            if num_90tee > 0: fittings['90_tee_branch'] = int(num_90tee)
+            if num_lateral > 0: fittings['lateral_tee'] = int(num_lateral)
+            if num_tee_cap > 0: fittings['tee_cap'] = int(num_tee_cap)
+            if has_term_cap: fittings['termination_cap'] = 1
             
             st.session_state.data['manifold_fittings'] = fittings
+            st.session_state.data['manifold_additional_k'] = additional_k
+            st.session_state.data['manifold_additional_pressure'] = additional_pressure
             st.session_state.step = 'analyzing'
             st.rerun()
 

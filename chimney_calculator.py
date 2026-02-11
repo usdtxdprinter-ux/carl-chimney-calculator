@@ -46,18 +46,71 @@ class ChimneyCalculator:
             }
         }
         
-        # Standard fittings pressure loss coefficients (K-factors)
+        # Fitting loss coefficients (K-values) organized by vent type
+        # Based on ASHRAE Fundamentals and manufacturer testing data
+        self.fitting_coefficients_by_vent_type = {
+            'UL441 Type B Vent': {
+                'entrance': 0.5,
+                '15_elbow': 0.15,
+                '30_elbow': 0.25,
+                '45_elbow': 0.35,
+                '90_elbow': 0.75,
+                'straight_tee': 0.3,      # Flow straight through tee
+                '90_tee_branch': 1.3,     # 90° turn at tee (change direction)
+                'lateral_tee': 0.6,       # 45° lateral branch at tee
+                'exit': 1.0,
+                'termination_cap': 0.5,
+                'tee_cap': 0.3,           # Cap on tee branch (dead end)
+                'base_friction_factor': 0.30  # For dP = f*(L/D)*rho*V^2 calculation
+            },
+            'UL1738 Special Gas Vent': {
+                'entrance': 0.5,
+                '15_elbow': 0.18,
+                '30_elbow': 0.28,
+                '45_elbow': 0.40,
+                '90_elbow': 0.85,
+                'straight_tee': 0.35,
+                '90_tee_branch': 1.4,
+                'lateral_tee': 0.7,
+                'exit': 1.0,
+                'termination_cap': 0.6,
+                'tee_cap': 0.35,
+                'base_friction_factor': 0.32
+            },
+            'UL103 Pressure Chimney': {
+                'entrance': 0.5,
+                '15_elbow': 0.12,
+                '30_elbow': 0.20,
+                '45_elbow': 0.30,
+                '90_elbow': 0.60,
+                'straight_tee': 0.25,
+                '90_tee_branch': 1.1,
+                'lateral_tee': 0.5,
+                'exit': 1.0,
+                'termination_cap': 0.4,
+                'tee_cap': 0.25,
+                'base_friction_factor': 0.25
+            }
+        }
+        
+        # Default/Generic fitting coefficients (used if vent type not specified)
+        # These are conservative values
         self.fittings = {
-            "90_elbow": 0.9,
-            "45_elbow": 0.4,
-            "30_elbow": 0.25,
-            "90_tee_flow_through": 0.6,
-            "90_tee_branch": 1.8,
-            "45_tee_lateral": 0.8,
-            "termination_cap": 1.0,
             "entrance": 0.5,
+            "15_elbow": 0.15,
+            "30_elbow": 0.25,
+            "45_elbow": 0.4,
+            "90_elbow": 0.9,
+            "straight_tee": 0.6,
+            "90_tee_branch": 1.3,
+            "lateral_tee": 0.8,
+            "termination_cap": 1.0,
+            "tee_cap": 0.6,
             "exit": 1.0
         }
+        
+        # Base friction factor for generic calculation
+        self.base_friction_factor = 0.3
         
         # Standard vent/chimney diameters (inches)
         self.standard_diameters = [3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 24, 30, 36]
@@ -296,19 +349,23 @@ class ChimneyCalculator:
         cfm = velocity_fps * 60 * area_ft2
         return cfm
     
-    def pressure_loss(self, length_ft, diameter_inches, velocity_fpm, temp_f, fittings_dict=None):
+    def pressure_loss(self, length_ft, diameter_inches, velocity_fpm, temp_f, fittings_dict=None, 
+                      vent_type=None, additional_k=0, additional_pressure_loss=0):
         """
-        Calculate total pressure loss using ASHRAE equation.
+        Calculate total pressure loss using ASHRAE equation with vent-type-specific coefficients.
         
-        ASHRAE Formula: dP = (0.3 × (L/D) + SUM(k)) × ρ × (V/1096.2)²
+        ASHRAE Formula: dP = (f × (L/D) + SUM(k) + additional_k) × ρ × (V/1096.2)² + additional_pressure_loss
         
         Where:
             dP = Pressure loss (inches w.c.)
+            f = Base friction factor (vent-type specific, default 0.3)
             L = Length (ft)
             D = Diameter (inches)
-            k = Friction coefficients of fittings
+            k = Friction coefficients of fittings (vent-type specific)
+            additional_k = User-specified additional resistance
             ρ = Density at mean flue gas temperature (lbm/ft³)
             V = Velocity (FPM)
+            additional_pressure_loss = User-specified pressure loss (in w.c.)
         
         Args:
             length_ft: Total vent length (ft)
@@ -316,6 +373,9 @@ class ChimneyCalculator:
             velocity_fpm: Gas velocity (feet per minute)
             temp_f: Gas temperature (°F)
             fittings_dict: Dictionary of fittings and quantities (optional)
+            vent_type: Type of vent system (UL441, UL1738, UL103) - uses specific K-values
+            additional_k: Additional user-specified K resistance factor (dimensionless)
+            additional_pressure_loss: Additional user-specified pressure loss (in w.c.)
             
         Returns:
             Dictionary with pressure loss breakdown in inches w.c.
@@ -323,16 +383,33 @@ class ChimneyCalculator:
         # Get density at flue gas temperature
         rho = self.air_density(temp_f)
         
-        # Calculate friction term: 0.3 × (L/D)
-        friction_term = 0.3 * (length_ft / diameter_inches)
+        # Select fitting coefficients based on vent type
+        if vent_type and vent_type in self.fitting_coefficients_by_vent_type:
+            fitting_k_values = self.fitting_coefficients_by_vent_type[vent_type]
+            base_friction = fitting_k_values.get('base_friction_factor', 0.3)
+        else:
+            fitting_k_values = self.fittings
+            base_friction = self.base_friction_factor
         
-        # Calculate sum of fitting k-factors
+        # Calculate friction term: f × (L/D)
+        friction_term = base_friction * (length_ft / diameter_inches)
+        
+        # Calculate sum of fitting k-factors using vent-type-specific values
         sum_k = 0
         fitting_breakdown = {}
         
         if fittings_dict:
             for fitting_type, quantity in fittings_dict.items():
-                if fitting_type in self.fittings:
+                if fitting_type in fitting_k_values:
+                    k_value = fitting_k_values[fitting_type] * quantity
+                    sum_k += k_value
+                    fitting_breakdown[fitting_type] = {
+                        'quantity': quantity,
+                        'k_each': fitting_k_values[fitting_type],
+                        'k_total': k_value
+                    }
+                elif fitting_type in self.fittings:
+                    # Fallback to generic if not in vent-specific
                     k_value = self.fittings[fitting_type] * quantity
                     sum_k += k_value
                     fitting_breakdown[fitting_type] = {
@@ -341,10 +418,22 @@ class ChimneyCalculator:
                         'k_total': k_value
                     }
         
+        # Add user-specified additional K resistance
+        if additional_k > 0:
+            sum_k += additional_k
+            fitting_breakdown['additional_k_resistance'] = {
+                'quantity': 1,
+                'k_each': additional_k,
+                'k_total': additional_k
+            }
+        
         # Calculate total pressure loss using ASHRAE equation
-        # dP = (0.3 × (L/D) + SUM(k)) × ρ × (V/1096.2)²
+        # dP = (f × (L/D) + SUM(k)) × ρ × (V/1096.2)²
         velocity_term = (velocity_fpm / 1096.2) ** 2
-        total_loss = (friction_term + sum_k) * rho * velocity_term
+        calculated_loss = (friction_term + sum_k) * rho * velocity_term
+        
+        # Add user-specified additional pressure loss
+        total_loss = calculated_loss + additional_pressure_loss
         
         # Calculate friction and fitting portions separately for reporting
         friction_loss = friction_term * rho * velocity_term
@@ -353,12 +442,17 @@ class ChimneyCalculator:
         return {
             'friction': friction_loss,
             'fittings': fitting_loss,
+            'calculated_loss': calculated_loss,
+            'additional_pressure_loss': additional_pressure_loss,
             'total': total_loss,
             'friction_term': friction_term,
+            'base_friction_factor': base_friction,
             'sum_k': sum_k,
+            'additional_k': additional_k,
             'fitting_breakdown': fitting_breakdown,
             'density_lbm_ft3': rho,
-            'velocity_fpm': velocity_fpm
+            'velocity_fpm': velocity_fpm,
+            'vent_type': vent_type or 'Generic'
         }
     
     def total_pressure_loss(self, system_config, velocity_fps, temp_f):
