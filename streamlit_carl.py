@@ -1343,58 +1343,281 @@ elif st.session_state.step == 'results':
     st.table(pd.DataFrame(two_louver_data))
     
     # ========================================================================
-    # US DRAFT CO. RECOMMENDATIONS
+    # US DRAFT CO. PRODUCT RECOMMENDATIONS
     # ========================================================================
     st.markdown("## 🏢 US Draft Co. Product Recommendations")
     
-    # Determine recommendation based on category and pressure
-    if worst['appliance']['category'] in ['cat_ii', 'cat_iii', 'cat_iv']:
-        st.success("**Recommended Product: CDS3 - Connector Draft System**")
+    # Determine draft condition
+    total_draft = worst['total_available_draft']
+    atm_pressure_check = -total_draft
+    
+    # Get category info
+    cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
+    cat_limits = cat_info.get('pressure_range', (-0.08, -0.03))
+    is_condensing = worst['appliance']['category'] in ['cat_ii', 'cat_iv']
+    num_appliances = st.session_state.data['num_appliances']
+    
+    # Decision Logic from US Draft Training Document
+    # Step 1: Determine draft condition
+    if atm_pressure_check > cat_limits[1]:
+        # Excessive draft (too positive atmospheric pressure = too negative draft)
+        draft_condition = "EXCESSIVE DRAFT"
+        need_odcs = True
+        need_vcs = False
+    elif atm_pressure_check < cat_limits[0]:
+        # Insufficient draft (too negative atmospheric pressure = too positive draft)
+        draft_condition = "INSUFFICIENT DRAFT"
+        need_odcs = False
+        need_vcs = True
+    else:
+        # Within range but could be marginal
+        draft_condition = "ADEQUATE DRAFT"
+        need_odcs = False
+        need_vcs = False
+    
+    st.write(f"**Draft Analysis:** {draft_condition}")
+    st.write(f"**Atmospheric Pressure:** {atm_pressure_check:.4f} in w.c.")
+    st.write(f"**Category Limits:** {cat_limits[0]:.2f} to {cat_limits[1]:.2f} in w.c.")
+    st.write("")
+    
+    # ========================================================================
+    # PRIMARY SYSTEM RECOMMENDATION
+    # ========================================================================
+    
+    if need_vcs and need_odcs:
+        # Need BOTH exhaust and overdraft protection
+        st.error("🔴 **CRITICAL: System needs BOTH draft inducement AND overdraft protection**")
         st.write("")
+        st.success("**RECOMMENDED: VCS + ODCS System (RBD Configuration)**")
+        st.write("")
+        st.write("**Primary Product: RBD (Relief Barometric Damper)**")
+        st.write("- Combines draft inducer WITH overdraft protection in one unit")
+        st.write("- Provides both insufficient draft correction AND excess draft relief")
+        st.write("- Single integrated solution for dual-condition systems")
+        st.write("")
+        
+        system_type = "-OV"  # VCS + ODCS
+        primary_product = "RBD (Relief Barometric Damper)"
+        
+    elif need_vcs:
+        # Need draft inducer only
+        st.warning("⚠️ **INSUFFICIENT DRAFT: Draft inducer required**")
+        st.write("")
+        st.success("**RECOMMENDED: VCS (Vent Control System)**")
+        st.write("")
+        st.write("**Primary Product: Draft Inducer**")
+        st.write("- Provides mechanical exhaust to overcome insufficient draft")
+        st.write("- Maintains consistent venting under all conditions")
+        st.write("")
+        
+        system_type = "-V"  # VCS only
+        primary_product = "Draft Inducer (TRV, T9F, or CBX series)"
+        
+    elif need_odcs:
+        # Need overdraft control only
+        st.warning("⚠️ **EXCESSIVE DRAFT: Overdraft control required**")
+        st.write("")
+        st.success("**RECOMMENDED: ODCS (Overdraft Control System)**")
+        st.write("")
+        st.write("**Primary Product: CDS3 (Connector Draft System)**")
+        st.write("- Modulating damper system for precise draft control")
+        st.write("- Controls excessive draft at low fire")
+        st.write("- Maintains optimal pressure throughout firing range")
+        st.write("")
+        
+        system_type = "-O"  # ODCS only
+        primary_product = "CDS3 (Connector Draft System)"
+        
+    else:
+        # Adequate draft, but recommend controls for seasonal stability
+        st.info("ℹ️ **ADEQUATE DRAFT: Within category limits**")
+        st.write("")
+        st.success("**RECOMMENDED: ODCS for Seasonal Stability**")
+        st.write("")
+        st.write("**Primary Product: CDS3 (Connector Draft System)**")
+        st.write("- Although currently adequate, draft varies 80% seasonally")
+        st.write("- CDS3 provides year-round consistent performance")
+        st.write("- Prevents issues during extreme weather")
+        st.write("")
+        
+        system_type = "-O"  # ODCS for stability
+        primary_product = "CDS3 (Connector Draft System)"
+    
+    # ========================================================================
+    # CONTROLLER RECOMMENDATION
+    # ========================================================================
+    st.markdown("### 🎛️ Controller Selection")
+    
+    # Determine controller based on appliance count and system needs
+    if is_condensing:
+        control_type = "Constant Pressure (REQUIRED for condensing)"
+    else:
+        control_type = "Constant Pressure (Recommended)"
+    
+    # Select controller model
+    if num_appliances == 1:
+        if system_type == "-V" and not is_condensing:
+            controller = "H100" + system_type
+            display = "LCD"
+        else:
+            controller = "V150" + system_type
+            display = "LCD with 4 buttons"
+    elif num_appliances <= 2:
+        controller = "V150" + system_type
+        display = "LCD with 4 buttons"
+    elif num_appliances <= 6:
+        controller = "V250" + system_type
+        display = "4\" Touchscreen"
+    elif num_appliances <= 15:
+        controller = "V350" + system_type
+        display = "7\" Touchscreen"
+    else:
+        controller = "V350" + system_type
+        display = "7\" Touchscreen"
+    
+    controller_data = {
+        "Parameter": [
+            "Recommended Controller",
+            "Configuration",
+            "Control Type",
+            "Max Appliances",
+            "Display Type",
+            "Systems Supported"
+        ],
+        "Specification": [
+            f"**{controller}**",
+            system_type,
+            control_type,
+            f"Up to {num_appliances} (configured)",
+            display,
+            "VCS, PAS, ODCS combinations"
+        ]
+    }
+    
+    st.table(pd.DataFrame(controller_data))
+    
+    # ========================================================================
+    # DRAFT INDUCER SELECTION (if needed)
+    # ========================================================================
+    if need_vcs or (need_vcs and need_odcs):
+        st.markdown("### 🌀 Draft Inducer Selection")
+        
+        # Get CFM from all operating scenario
+        all_op = result.get('all_operating')
+        if all_op:
+            total_cfm = all_op['combined']['total_cfm']
+            static_pressure = abs(worst['total_available_draft'])
+            
+            # Select inducer series based on CFM and pressure
+            if total_cfm <= 2675:
+                inducer_series = "TRV Series"
+                inducer_desc = "True Inline configuration"
+                cfm_range = "80-2,675 CFM"
+                pressure_range = "0-3\" w.c."
+            elif total_cfm <= 6090:
+                inducer_series = "T9F Series"
+                inducer_desc = "90° Inline configuration"
+                cfm_range = "200-6,090 CFM"
+                pressure_range = "0-4\" w.c."
+            elif total_cfm <= 17000:
+                inducer_series = "CBX Series"
+                inducer_desc = "Termination mount (top of chimney)"
+                cfm_range = "3,300-17,000 CFM"
+                pressure_range = "0-4\" w.c."
+            else:
+                inducer_series = "T9F Extended Series"
+                inducer_desc = "90° Inline - High Capacity"
+                cfm_range = "2,650-22,000 CFM"
+                pressure_range = "0-8\" w.c."
+            
+            # Material selection
+            if is_condensing:
+                material = "316L Stainless Steel (REQUIRED for condensing)"
+            else:
+                material = "Aluminum or 316L Stainless Steel"
+            
+            inducer_data = {
+                "Parameter": [
+                    "Recommended Series",
+                    "Configuration",
+                    "CFM Requirement",
+                    "Static Pressure Required",
+                    "Available CFM Range",
+                    "Max Pressure Capacity",
+                    "Material Required"
+                ],
+                "Specification": [
+                    f"**{inducer_series}**",
+                    inducer_desc,
+                    f"{total_cfm:.0f} CFM",
+                    f"{static_pressure:.4f} in w.c.",
+                    cfm_range,
+                    pressure_range,
+                    material
+                ]
+            }
+            
+            st.table(pd.DataFrame(inducer_data))
+            
+            if is_condensing:
+                st.error("⚠️ **316L Stainless Steel is REQUIRED** for condensing appliances to prevent corrosion from acidic condensate.")
+    
+    # ========================================================================
+    # CDS3 SPECIFICATIONS (if ODCS needed)
+    # ========================================================================
+    if need_odcs or (not need_vcs and not need_odcs):
+        st.markdown("### 🎛️ CDS3 Connector Draft System Details")
         
         cds3_features = {
             "Feature": [
                 "Application",
                 "Control Method",
                 "Technology",
+                "Pressure Transducer",
                 "Response Time",
                 "User Interface",
-                "Damper Type",
-                "Connections",
-                "Optional Feature"
+                "Damper Configuration",
+                "Actuator Type",
+                "Connection Options",
+                "Seal Options",
+                "Ideal For"
             ],
             "Specification": [
-                "Category II, III, and IV appliances",
-                "Maintains precise pressure at appliance outlet",
-                "EC-Flow with bi-directional pressure transducer",
+                "Overdraft control for all appliance categories",
+                "Modulating damper maintains precise outlet pressure",
+                "EC-Flow™ bi-directional pressure control",
+                "Built-in bi-directional transducer",
                 "2-second actuator (industry leading)",
-                "4\" color touchscreen display",
-                "Single Blade Damper (SBD) with butterfly actuator",
+                "Integrated with controller touchscreen",
+                "Single Blade Damper (SBD) with butterfly design",
+                "Butterfly actuator for smooth modulation",
                 "Standard 1/2\" flanges and v-band connections",
-                "'G' model with Viton seal prevents backflow"
+                "'G' model available with Viton seal for backflow prevention",
+                "Systems with adequate draft needing seasonal stability"
             ]
         }
         
         st.table(pd.DataFrame(cds3_features))
-        
-    else:
-        cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
-        cat_limits = cat_info.get('pressure_range', (0, 0))
-        
-        if atm_pressure < cat_limits[0]:
-            st.success("**Recommended Product: Barometric Damper**")
-            st.write("- Controls excessive draft")
-            st.write("- Simple, reliable, cost-effective solution")
-            st.write("- Ideal for Category I appliances with over-draft")
-        elif atm_pressure > cat_limits[1]:
-            st.warning("**Recommended Product: Draft Inducer**")
-            st.write("- Overcomes insufficient natural draft")
-            st.write("- Up to 0.75 in w.c. capacity")
-            st.write("- Required when system cannot produce adequate draft")
-        else:
-            st.info("**System Status:** Within acceptable range")
-            st.write("- Consider barometric damper for seasonal stability")
-            st.write("- US Draft Co. controls ensure year-round reliable performance")
+    
+    # ========================================================================
+    # CRITICAL NOTES
+    # ========================================================================
+    st.markdown("### ⚠️ Critical Installation Requirements")
+    
+    critical_notes = []
+    
+    if is_condensing:
+        critical_notes.append("**316L Stainless Steel REQUIRED:** All exhaust components must be 316L SS for condensing applications")
+    
+    if need_vcs and need_odcs:
+        critical_notes.append("**RBD Configuration:** Use Relief Barometric Damper to combine draft inducer and overdraft protection")
+    
+    critical_notes.append("**Constant Pressure Control:** Required for safe, consistent operation across all firing ranges")
+    critical_notes.append("**Seasonal Variation:** Draft varies 80% throughout the year - controls ensure safe operation year-round")
+    critical_notes.append("**Professional Installation:** All systems must be installed per US Draft Co. specifications and local codes")
+    
+    for note in critical_notes:
+        st.write(f"• {note}")
     
     st.markdown("---")
     st.markdown("### 📞 Contact Information")
@@ -1404,13 +1627,15 @@ elif st.session_state.step == 'results':
             "Company",
             "Address",
             "Phone",
-            "Website"
+            "Website",
+            "Technical Support"
         ],
         " ": [
-            "US Draft by RM Manifold",
+            "US Draft Co. - A Division of R.M. Manifold Group, Inc.",
             "100 S Sylvania Ave, Fort Worth, TX 76111",
             "817-393-4029",
-            "www.usdraft.com"
+            "www.usdraft.com",
+            "Available for sizing assistance and product selection"
         ]
     }
     st.table(pd.DataFrame(contact_data))
