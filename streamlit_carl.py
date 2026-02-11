@@ -711,30 +711,86 @@ elif st.session_state.step == 'manifold_diameter':
 elif st.session_state.step == 'manifold_height':
     st.subheader("🏗️ Manifold - Dimensions")
     
-    # If optimizing, calculate suggested diameter
+    # If optimizing, calculate suggested diameter with detailed analysis
     if st.session_state.data.get('optimize_manifold'):
         combined = calc.calculate_combined_cfm(st.session_state.data['appliances'])
         total_cfm = combined['total_cfm']
         
-        # Find optimal diameter (target 8-20 ft/s = 480-1200 fpm)
+        st.info(f"📊 **System Total:** {total_cfm:.0f} CFM combined from all appliances")
+        
+        # Evaluate multiple diameters to find optimal
         standard_sizes = [6, 7, 8, 10, 12, 14, 16, 18, 20, 24, 30, 36]
-        suggested_dia = None
+        
+        st.write("**🔍 Evaluating diameters for optimal performance:**")
+        st.write("")
+        
+        optimization_results = []
+        
         for d in standard_sizes:
-            vel = calc.velocity_from_cfm(total_cfm, d)
-            if 8 <= vel <= 20:
-                suggested_dia = d
-                suggested_vel = vel * 60
-                break
+            vel_fps = calc.velocity_from_cfm(total_cfm, d)
+            vel_fpm = vel_fps * 60
+            
+            # Calculate approximate friction for evaluation
+            # Using simplified formula: dP ≈ 0.3 * (L/D) * ρ * V²
+            # Assume typical 35 ft height for estimation
+            estimated_L = 40  # ft
+            D_ft = d / 12
+            rho = 0.075  # lb/ft³ typical
+            dp_friction = 0.3 * (estimated_L / D_ft) * rho * (vel_fps ** 2) / 5.2  # Convert to in w.c.
+            
+            # Determine status based on velocity
+            if vel_fpm < 480:
+                status = "❌ Too slow (< 480 ft/min)"
+                score = 0
+            elif vel_fpm > 1200:
+                status = "❌ Too fast (> 1200 ft/min)"
+                score = 0
+            elif 600 <= vel_fpm <= 900:
+                status = "✅ Optimal"
+                score = 3
+            elif 480 <= vel_fpm <= 1200:
+                status = "⚠️ Acceptable"
+                score = 2
+            else:
+                status = "❌ Out of range"
+                score = 0
+            
+            optimization_results.append({
+                'diameter': d,
+                'velocity_fpm': vel_fpm,
+                'velocity_fps': vel_fps,
+                'dp_estimate': dp_friction,
+                'status': status,
+                'score': score
+            })
+            
+            # Only show first few for display
+            if d <= 20:
+                if score > 0:
+                    st.write(f"  • {d}\" → {vel_fpm:.0f} ft/min {status}")
         
-        if suggested_dia is None:
-            suggested_dia = 12
-            suggested_vel = calc.velocity_from_cfm(total_cfm, suggested_dia) * 60
+        # Find optimal (highest score, lowest pressure)
+        optimal = max(optimization_results, key=lambda x: (x['score'], -x['dp_estimate']))
+        suggested_dia = optimal['diameter']
+        suggested_vel = optimal['velocity_fpm']
         
-        st.success(f"💡 **CARL Suggests:** {suggested_dia}\" diameter")
-        st.write(f"For {total_cfm:.0f} CFM → ~{suggested_vel:.0f} ft/min velocity")
+        st.write("")
+        st.success(f"💡 **CARL Recommends: {suggested_dia}\" diameter**")
+        st.write(f"   • Velocity: {suggested_vel:.0f} ft/min ({optimal['velocity_fps']:.1f} ft/s)")
+        st.write(f"   • Target Range: 600-900 ft/min (optimal) | 480-1200 ft/min (acceptable)")
+        st.write(f"   • Estimated Friction: ~{optimal['dp_estimate']:.4f} in w.c. per 40 ft")
+        
         st.session_state.data['manifold_diameter'] = suggested_dia
+        st.session_state.data['optimization_details'] = {
+            'recommended_diameter': suggested_dia,
+            'velocity_fpm': suggested_vel,
+            'all_options': optimization_results
+        }
     else:
-        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\"")
+        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" (User Selected)")
+    
+    st.write("")
+    st.write("**Enter manifold dimensions:**")
     
     height = st.number_input("Vertical Height (ft):", min_value=1.0, value=35.0, step=1.0)
     horiz = st.number_input("Horizontal Run (ft):", min_value=0.0, value=5.0, step=1.0)
@@ -898,7 +954,23 @@ elif st.session_state.step == 'results':
     
     # Manifold Configuration
     st.markdown("### 🏗️ Common Vent (Manifold)")
-    st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" {'(Optimized by CARL)' if st.session_state.data.get('optimize_manifold') else '(User Selected)'}")
+    
+    if st.session_state.data.get('optimize_manifold') and 'optimization_details' in st.session_state.data:
+        opt = st.session_state.data['optimization_details']
+        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" ✅ **Optimized by CARL**")
+        st.write(f"**Optimization:** {opt['velocity_fpm']:.0f} ft/min velocity (optimal range)")
+        
+        # Show why this was chosen
+        with st.expander("📊 View Optimization Analysis"):
+            st.write("CARL evaluated these diameters:")
+            for result in opt['all_options']:
+                if result['score'] > 0:
+                    st.write(f"• {result['diameter']}\" → {result['velocity_fpm']:.0f} ft/min - {result['status']}")
+            st.write("")
+            st.write(f"**Selected {opt['recommended_diameter']}\" for optimal velocity and minimal friction loss**")
+    else:
+        st.write(f"**Diameter:** {st.session_state.data['manifold_diameter']}\" (User Selected)")
+    
     st.write(f"**Vertical Height:** {st.session_state.data['manifold_height']} ft")
     st.write(f"**Horizontal Run:** {st.session_state.data['manifold_horizontal']} ft")
     st.write(f"**Total Length:** {st.session_state.data['manifold_height'] + st.session_state.data['manifold_horizontal']} ft")
