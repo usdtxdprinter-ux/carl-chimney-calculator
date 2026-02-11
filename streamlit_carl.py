@@ -951,8 +951,32 @@ elif st.session_state.step == 'analyzing':
 elif st.session_state.step == 'results':
     st.subheader("✅ Analysis Complete")
     
-    result = st.session_state.data['results']
-    worst = result['worst_case']['worst_case']
+    result = st.session_state.data.get('results')
+    
+    # Verify we have results
+    if not result or not isinstance(result, dict):
+        st.error("❌ No analysis results found. Please run the analysis again.")
+        if st.button("⬅️ Back to Manifold", key="btn_no_results"):
+            st.session_state.step = 'manifold_fittings'
+            st.rerun()
+        st.stop()
+    
+    # Verify we have worst case data
+    if 'worst_case' not in result or not result['worst_case']:
+        st.error("❌ Worst case analysis data missing.")
+        st.write("Debug: Available keys:", list(result.keys()))
+        if st.button("⬅️ Back to Manifold", key="btn_no_worst"):
+            st.session_state.step = 'manifold_fittings'
+            st.rerun()
+        st.stop()
+    
+    worst = result['worst_case'].get('worst_case')
+    if not worst:
+        st.error("❌ Worst case connector data missing.")
+        if st.button("⬅️ Back to Manifold", key="btn_no_worst_connector"):
+            st.session_state.step = 'manifold_fittings'
+            st.rerun()
+        st.stop()
     
     # Project Header
     st.markdown("---")
@@ -1085,17 +1109,22 @@ elif st.session_state.step == 'results':
     
     # Seasonal Variation
     st.markdown("### 🌡️ Seasonal Draft Variation")
-    available = result['all_operating']['common_vent']['available_draft_inwc']
-    winter_draft = available * 1.4
-    summer_draft = available * 0.6
     
-    st.write("**Estimated Draft Variation:**")
-    st.write(f"- Winter (0°F): ~{winter_draft:.4f} in w.c.")
-    st.write(f"- Design ({st.session_state.data['temp_outside_f']}°F): ~{available:.4f} in w.c.")
-    st.write(f"- Summer (95°F): ~{summer_draft:.4f} in w.c.")
-    st.write(f"- **Variation Range:** {abs(winter_draft - summer_draft):.4f} in w.c. swing")
-    
-    st.warning("⚠️ US Draft Co. draft controls are REQUIRED for consistent year-round performance!")
+    # Safe access to all_operating scenario
+    if result.get('all_operating') and result['all_operating'].get('common_vent'):
+        available = result['all_operating']['common_vent'].get('available_draft_inwc', 0)
+        winter_draft = available * 1.4
+        summer_draft = available * 0.6
+        
+        st.write("**Estimated Draft Variation:**")
+        st.write(f"- Winter (0°F): ~{winter_draft:.4f} in w.c.")
+        st.write(f"- Design ({st.session_state.data['temp_outside_f']}°F): ~{available:.4f} in w.c.")
+        st.write(f"- Summer (95°F): ~{summer_draft:.4f} in w.c.")
+        st.write(f"- **Variation Range:** {abs(winter_draft - summer_draft):.4f} in w.c. swing")
+        
+        st.warning("⚠️ US Draft Co. draft controls are REQUIRED for consistent year-round performance!")
+    else:
+        st.warning("⚠️ Seasonal variation data not available - draft controls still recommended")
     
     st.markdown("---")
     
