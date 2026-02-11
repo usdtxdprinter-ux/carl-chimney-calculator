@@ -182,6 +182,10 @@ st.title("🔥 CARL")
 st.caption("Chimney Analysis and Reasoning Layer")
 st.markdown("---")
 
+# Helper function to get current appliance number
+def get_current_appliance_num():
+    return len(st.session_state.data.get('appliances', [])) + 1
+
 # ============================================================================
 # CONVERSATION FLOW WITH BUTTONS
 # ============================================================================
@@ -360,10 +364,6 @@ elif st.session_state.step == 'same_appliances':
             st.session_state.data['appliances'] = []
             st.session_state.step = 'appliance_1_mbh'
             st.rerun()
-
-# Helper function to get current appliance number
-def get_current_appliance_num():
-    return len(st.session_state.data.get('appliances', [])) + 1
 
 # STEP: Appliance MBH Input
 elif st.session_state.step == 'appliance_1_mbh':
