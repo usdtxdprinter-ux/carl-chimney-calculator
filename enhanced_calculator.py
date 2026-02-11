@@ -40,6 +40,13 @@ class EnhancedChimneyCalculator(ChimneyCalculator):
                 'temp_default': 275,
                 'pressure_range': (-0.05, 0.25),
                 'description': 'Condensing with positive vent pressure'
+            },
+            'building_heating': {
+                'name': 'Building Heating Appliance',
+                'co2_default': 8.5,
+                'temp_default': 380,
+                'pressure_range': (-0.08, -0.03),
+                'description': 'Standard building heating appliance'
             }
         }
     
