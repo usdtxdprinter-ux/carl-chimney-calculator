@@ -178,15 +178,35 @@ if user_input:
                 response = f"Custom appliance selected.\n\nWhat is the CO2 percentage from the combustion analyzer?\n\n(Typical range: 6-12%)"
                 add_message("assistant", response)
             else:
-                # Use defaults for this category
+                # Show defaults but allow adjustment
                 cat_info = calc.appliance_categories[cat_key]
-                st.session_state.temp_co2 = cat_info['co2_default']
-                st.session_state.temp_temp = cat_info['temp_default']
-                st.session_state.current_step = 'appliance_fuel'
-                response = f"{cat_name} selected.\n\nDefaults: {cat_info['co2_default']}% CO2, {cat_info['temp_default']}°F\n\nWhat fuel type?\n\n1) Natural Gas\n2) LP Gas (Propane)\n3) Oil\n\nEnter 1, 2, or 3:"
+                st.session_state.temp_co2_default = cat_info['co2_default']
+                st.session_state.temp_temp_default = cat_info['temp_default']
+                st.session_state.current_step = 'appliance_adjust'
+                response = f"{cat_name} selected.\n\nDefault values:\n- CO2: {cat_info['co2_default']}%\n- Flue Gas Temperature: {cat_info['temp_default']}°F\n\nWould you like to adjust these values?\n\n1) Use defaults (recommended)\n2) Adjust CO2 and temperature\n\nEnter 1 or 2:"
                 add_message("assistant", response)
         else:
             add_message("assistant", "Please enter 1, 2, 3, 4, or 5.")
+    
+    elif st.session_state.current_step == 'appliance_adjust':
+        if user_input == '1':
+            # Use defaults
+            st.session_state.temp_co2 = st.session_state.temp_co2_default
+            st.session_state.temp_temp = st.session_state.temp_temp_default
+            del st.session_state.temp_co2_default
+            del st.session_state.temp_temp_default
+            st.session_state.current_step = 'appliance_fuel'
+            response = f"Using default values: {st.session_state.temp_co2}% CO2, {st.session_state.temp_temp}°F\n\nWhat fuel type?\n\n1) Natural Gas\n2) LP Gas (Propane)\n3) Oil\n\nEnter 1, 2, or 3:"
+            add_message("assistant", response)
+        elif user_input == '2':
+            # Allow adjustment
+            del st.session_state.temp_co2_default
+            del st.session_state.temp_temp_default
+            st.session_state.current_step = 'appliance_co2'
+            response = f"Let's adjust the values.\n\nWhat is the CO2 percentage from your combustion analyzer?\n\n(Typical range: 6-12%)"
+            add_message("assistant", response)
+        else:
+            add_message("assistant", "Please enter 1 to use defaults or 2 to adjust values.")
     
     elif st.session_state.current_step == 'appliance_co2':
         try:
