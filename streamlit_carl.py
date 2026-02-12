@@ -664,13 +664,21 @@ elif st.session_state.step == 'connector_length':
     st.subheader("🔌 Connector - Length")
     st.write(f"**Diameter:** {st.session_state.data['connector_diameter']}\"")
     
-    length = st.number_input("Total Connector Length (ft):", min_value=0.1, value=10.0, step=1.0)
+    st.info("💡 **Total Length** = Vertical rise + Horizontal run. For example: 8 ft vertical + 5 ft horizontal = 13 ft total length")
+    
+    length = st.number_input("Total Connector Length (ft):", min_value=0.1, value=10.0, step=1.0,
+                            help="Sum of all vertical and horizontal sections")
     height = st.number_input("Vertical Height/Rise (ft):", min_value=0.0, value=0.0, step=1.0, 
                             help="Portion of connector that is vertical (contributes to draft)")
     
+    # Calculate horizontal for display
+    horizontal = length - height
+    
     if height > length:
-        st.error("Height cannot be greater than total length!")
+        st.error("❌ Vertical height cannot be greater than total length!")
     else:
+        st.write(f"**Breakdown:** {height:.1f} ft vertical + {horizontal:.1f} ft horizontal = {length:.1f} ft total")
+        
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ Back", key="btn_conn_len_back"):
@@ -1940,10 +1948,37 @@ elif st.session_state.step == 'draft_inducer_type':
         st.write("**Select draft inducer configuration:**")
         st.write("")
         
+        # Debug: Show what we're looking for
+        with st.expander("🔍 Debug Info - Fan Selection Criteria"):
+            st.write(f"**Required CFM:** {total_cfm:.0f}")
+            st.write(f"**Static Pressure (actual @ {mean_temp_f:.0f}°F):** {static_pressure:.4f} in w.c.")
+            
+            # Calculate corrected pressure here for display
+            from product_selector import ProductSelector as PS_temp
+            calc_temp = PS_temp()
+            rho_70 = calc_temp._air_density(70)
+            rho_actual = calc_temp._air_density(mean_temp_f)
+            density_ratio = rho_70 / rho_actual
+            corrected_pressure = static_pressure * density_ratio
+            
+            st.write(f"**Static Pressure (corrected to 70°F):** {corrected_pressure:.4f} in w.c.")
+            st.write(f"**Temperature correction ratio:** {density_ratio:.3f}")
+            st.write("")
+            st.write("**Fan Series Ranges:**")
+            st.write("• CBX: 215-17,000 CFM, 0-4.0 in w.c.")
+            st.write("• TRV: 80-2,675 CFM, 0-3.0 in w.c.")
+            st.write("• T9F: 200-6,090 CFM, 0-4.0 in w.c.")
+        
         # Check which series can work
         cbx_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'CBX', mean_temp_f)
         trv_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'TRV', mean_temp_f)
         t9f_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'T9F', mean_temp_f)
+        
+        # Debug results
+        with st.expander("🔍 Debug Info - Selection Results"):
+            st.write(f"**CBX Result:** {'✅ ' + cbx_selection['model'] if cbx_selection else '❌ None'}")
+            st.write(f"**TRV Result:** {'✅ ' + trv_selection['model'] if trv_selection else '❌ None'}")
+            st.write(f"**T9F Result:** {'✅ ' + t9f_selection['model'] if t9f_selection else '❌ None'}")
         
         # Get CARL recommendation
         auto_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, None, mean_temp_f)

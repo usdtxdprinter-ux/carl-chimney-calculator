@@ -92,7 +92,7 @@ class ProductSelector:
             },
             'CBX': {
                 'name': 'CBX Series - Termination Mount',
-                'cfm_range': (640, 17000),  # Updated based on actual curve data
+                'cfm_range': (215, 17000),  # CBX007 starts at 215 CFM
                 'pressure_range': (0, 4.0),
                 'models': ['CBX007', 'CBX013', 'CBX022', 'CBX025', 'CBX035',
                           'CBX050', 'CBX075'],
