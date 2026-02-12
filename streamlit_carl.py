@@ -196,15 +196,29 @@ if st.session_state.step == 'project_name':
     st.subheader("📋 Project Information")
     st.write("Let's start by getting some basic information about your project.")
     
-    project_name = st.text_input("Project Name:", placeholder="e.g., USR Boiler Room")
+    # User information
+    col1, col2 = st.columns(2)
+    with col1:
+        user_name = st.text_input("Your Name:*", placeholder="e.g., John Smith")
+    with col2:
+        user_email = st.text_input("Email Address:*", placeholder="e.g., john@company.com")
+    
+    # Project name
+    project_name = st.text_input("Project Name:*", placeholder="e.g., USR Boiler Room")
     
     if st.button("➡️ Next", key="btn_project_name", use_container_width=True):
-        if project_name:
-            st.session_state.data['project_name'] = project_name
-            st.session_state.step = 'zip_code'
-            st.rerun()
+        if project_name and user_name and user_email:
+            # Basic email validation
+            if '@' in user_email and '.' in user_email:
+                st.session_state.data['project_name'] = project_name
+                st.session_state.data['user_name'] = user_name
+                st.session_state.data['user_email'] = user_email
+                st.session_state.step = 'zip_code'
+                st.rerun()
+            else:
+                st.error("Please enter a valid email address")
         else:
-            st.error("Please enter a project name")
+            st.error("Please fill in all required fields (*)")
 
 # STEP: Zip Code
 elif st.session_state.step == 'zip_code':
@@ -2351,9 +2365,9 @@ elif st.session_state.step == 'reports_complete':
     all_op = result.get('all_operating')
     
     system_data = {
-        'total_cfm': all_op['combined']['total_cfm'] if all_op else 0,
+        'cfm': all_op['combined']['total_cfm'] if all_op else 0,
         'static_pressure': abs(worst['total_available_draft']),
-        'is_condensing': worst['appliance']['category'] in ['cat_ii', 'cat_iv']
+        'appliance_category': worst['appliance']['category']
     }
     
     # Generate specification
@@ -2393,7 +2407,29 @@ elif st.session_state.step == 'reports_complete':
             )
     
     with col2:
-        st.info("📄 Sizing Report with embedded calculations and datasheets coming in next update!")
+        # PDF Sizing Report
+        from pdf_report_generator import PDFReportGenerator
+        
+        pdf_gen = PDFReportGenerator()
+        
+        # Get fan curve image if available
+        fan_curve_bytes = st.session_state.data.get('fan_curve_image')
+        
+        # Prepare data for PDF
+        pdf_buffer = pdf_gen.generate_report(
+            project_data=st.session_state.data,
+            calc_results=result,
+            products=st.session_state.data['products'],
+            fan_curve_img=fan_curve_bytes
+        )
+        
+        st.download_button(
+            label="📄 Sizing Report (PDF)",
+            data=pdf_buffer.getvalue(),
+            file_name=f"{st.session_state.data['project_name']}_Sizing_Report.pdf",
+            mime="application/pdf",
+            key="download_pdf"
+        )
     
     st.markdown("---")
     
