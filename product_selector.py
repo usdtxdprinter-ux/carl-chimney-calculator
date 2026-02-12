@@ -8,6 +8,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
+# Try to import fan curves data
+try:
+    from fan_curves_data import FAN_CURVES
+    print("✅ Successfully imported FAN_CURVES")
+except ImportError as e:
+    print(f"❌ ERROR: Could not import fan_curves_data: {e}")
+    print(f"   Current directory: {Path.cwd()}")
+    print(f"   Files in directory: {list(Path('.').glob('*.py'))}")
+    FAN_CURVES = {}  # Empty dict as fallback
+
 class ProductSelector:
     """
     Intelligent product selection based on system requirements
@@ -15,36 +25,30 @@ class ProductSelector:
     
     def __init__(self):
         """Initialize with fan curve data"""
-        self.project_dir = Path('/mnt/project')
         self.fan_curves = self._load_fan_curves()
         
     def _load_fan_curves(self):
-        """Load all fan curve data from Excel files"""
+        """Load fan curve data from embedded Python dictionary"""
         curves = {}
         
-        # Load Draft Inducers (TRV, T9F, CBX)
-        try:
-            df_inducers = pd.read_excel(
-                self.project_dir / 'Draft_Inducers_Fan_Curves.xlsx', 
-                sheet_name=None
-            )
-            for sheet_name, data in df_inducers.items():
-                if sheet_name != 'Sheet26':  # Skip empty sheet
-                    curves[sheet_name] = data
-        except Exception as e:
-            print(f"Warning: Could not load draft inducer curves: {e}")
+        if not FAN_CURVES:
+            print("⚠️ WARNING: FAN_CURVES dictionary is empty!")
+            print("   This means fan_curves_data.py was not imported properly")
+            return curves
         
-        # Load DEF fans (supply air)
+        # Convert embedded dictionary data to pandas DataFrames
         try:
-            df_def = pd.read_excel(
-                self.project_dir / 'DEF_Fan_Curves.xlsx',
-                sheet_name=None
-            )
-            for sheet_name, data in df_def.items():
-                curves[sheet_name] = data
-        except Exception as e:
-            print(f"Warning: Could not load DEF curves: {e}")
+            for model_name, data in FAN_CURVES.items():
+                df = pd.DataFrame({
+                    'CFM': data['CFM'],
+                    'PRESSURE': data['PRESSURE']
+                })
+                curves[model_name] = df
             
+            print(f"✅ Loaded {len(curves)} fan curves from embedded data")
+        except Exception as e:
+            print(f"❌ ERROR converting fan curves to DataFrames: {e}")
+        
         return curves
     
     def select_draft_inducer_series(self, cfm, static_pressure, user_preference=None, mean_temp_f=300):
@@ -214,29 +218,16 @@ class ProductSelector:
         Check if fan curve can deliver required CFM at required pressure
         
         Args:
-            curve_data: DataFrame with CFM and pressure columns
+            curve_data: DataFrame with CFM and PRESSURE columns
             required_cfm: Required airflow
             required_pressure: Required static pressure
             
         Returns:
             True if fan can deliver, False otherwise
         """
-        # Interpolate pressure at required CFM
         try:
             cfm_values = curve_data['CFM'].values
-            
-            # Find pressure column (handle variations: IN.WC, IN WC, IN. WC, etc.)
-            pressure_col = None
-            for col in curve_data.columns:
-                if 'WC' in col.upper():
-                    pressure_col = col
-                    break
-            
-            if not pressure_col:
-                print(f"Error: No pressure column found in: {list(curve_data.columns)}")
-                return False
-            
-            pressure_values = curve_data[pressure_col].values
+            pressure_values = curve_data['PRESSURE'].values
             
             # Fan must be able to deliver at least required CFM
             if required_cfm > cfm_values.max():
@@ -413,23 +404,13 @@ class ProductSelector:
         
         curve_data = self.fan_curves[fan_model]
         
-        # Find pressure column (handle variations)
-        pressure_col = None
-        for col in curve_data.columns:
-            if 'WC' in col.upper():
-                pressure_col = col
-                break
-        
-        if not pressure_col:
-            return None
-        
         # Create figure
         fig, ax = plt.subplots(figsize=(10, 6))
         
         # Plot fan curve
-        ax.plot(curve_data['CFM'], curve_data[pressure_col], 
+        ax.plot(curve_data['CFM'], curve_data['PRESSURE'], 
                'b-', linewidth=2, label=f'{fan_model} Performance')
-        ax.fill_between(curve_data['CFM'], 0, curve_data[pressure_col], alpha=0.1)
+        ax.fill_between(curve_data['CFM'], 0, curve_data['PRESSURE'], alpha=0.1)
         
         # Plot system operating point
         ax.plot(system_cfm, system_pressure, 'ro', markersize=10, 
@@ -452,7 +433,7 @@ class ProductSelector:
         
         # Set reasonable axis limits
         ax.set_xlim(0, curve_data['CFM'].max() * 1.1)
-        ax.set_ylim(0, curve_data[pressure_col].max() * 1.1)
+        ax.set_ylim(0, curve_data['PRESSURE'].max() * 1.1)
         
         plt.tight_layout()
         return fig

@@ -1949,31 +1949,35 @@ elif st.session_state.step == 'draft_inducer_type':
         st.write("")
         
         # Debug: Show what we're looking for
-        with st.expander("🔍 Debug Info - Fan Selection Criteria"):
-            st.write(f"**Fan curves loaded:** {len(selector.fan_curves)}")
-            if len(selector.fan_curves) == 0:
-                st.error("❌ NO FAN CURVES LOADED! Check Excel files are in repository.")
-            else:
-                st.success(f"✅ {len(selector.fan_curves)} fan models available")
-            
-            st.write(f"**Required CFM:** {total_cfm:.0f}")
-            st.write(f"**Static Pressure (actual @ {mean_temp_f:.0f}°F):** {static_pressure:.4f} in w.c.")
-            
-            # Calculate corrected pressure here for display
-            from product_selector import ProductSelector as PS_temp
-            calc_temp = PS_temp()
-            rho_70 = calc_temp._air_density(70)
-            rho_actual = calc_temp._air_density(mean_temp_f)
-            density_ratio = rho_70 / rho_actual
-            corrected_pressure = static_pressure * density_ratio
-            
-            st.write(f"**Static Pressure (corrected to 70°F):** {corrected_pressure:.4f} in w.c.")
-            st.write(f"**Temperature correction ratio:** {density_ratio:.3f}")
-            st.write("")
-            st.write("**Fan Series Ranges:**")
-            st.write("• CBX: 215-17,000 CFM, 0-4.0 in w.c.")
-            st.write("• TRV: 80-2,675 CFM, 0-3.0 in w.c.")
-            st.write("• T9F: 200-6,090 CFM, 0-4.0 in w.c.")
+        try:
+            with st.expander("🔍 Debug Info - Fan Selection Criteria"):
+                st.write(f"**Fan curves loaded:** {len(selector.fan_curves)}")
+                if len(selector.fan_curves) == 0:
+                    st.error("❌ NO FAN CURVES LOADED! Check fan_curves_data.py is in repository.")
+                    st.write("This means the import failed. Check Streamlit Cloud logs.")
+                else:
+                    st.success(f"✅ {len(selector.fan_curves)} fan models available")
+                
+                st.write(f"**Required CFM:** {total_cfm:.0f}")
+                st.write(f"**Static Pressure (actual @ {mean_temp_f:.0f}°F):** {static_pressure:.4f} in w.c.")
+                
+                # Calculate corrected pressure here for display
+                rho_70 = selector._air_density(70)
+                rho_actual = selector._air_density(mean_temp_f)
+                density_ratio = rho_70 / rho_actual
+                corrected_pressure = static_pressure * density_ratio
+                
+                st.write(f"**Static Pressure (corrected to 70°F):** {corrected_pressure:.4f} in w.c.")
+                st.write(f"**Temperature correction ratio:** {density_ratio:.3f}")
+                st.write("")
+                st.write("**Fan Series Ranges:**")
+                st.write("• CBX: 215-17,000 CFM, 0-4.0 in w.c.")
+                st.write("• TRV: 80-2,675 CFM, 0-3.0 in w.c.")
+                st.write("• T9F: 200-6,090 CFM, 0-4.0 in w.c.")
+        except Exception as e:
+            st.error(f"Debug section error: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
         
         # Check which series can work
         cbx_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'CBX', mean_temp_f)
