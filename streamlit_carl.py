@@ -1309,7 +1309,8 @@ elif st.session_state.step == 'results':
     # ========================================================================
     # LOW FIRE (TURNDOWN) ANALYSIS
     # ========================================================================
-    worst_low = result['worst_case'].get('worst_case_low_fire')
+    worst_case_analysis = result.get('worst_case', {})
+    worst_low = worst_case_analysis.get('worst_case_low_fire')
     
     if worst_low:
         st.markdown("## 🔥 Low Fire (Turndown) Analysis")
