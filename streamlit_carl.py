@@ -1979,10 +1979,49 @@ elif st.session_state.step == 'draft_inducer_type':
             connector_loss = abs(connector.get('pressure_loss_inwc', 0))
             
             # Remove connector loss from fan selection requirement
-            static_pressure = static_pressure - connector_loss
+            # Note: This can result in negative value if connector loss > total
+            adjusted_pressure = static_pressure - connector_loss
             
             st.info(f"ℹ️ **Category IV System:** Connector pressure loss ({connector_loss:.4f} in w.c.) "
-                    f"excluded from fan selection. Using only manifold pressure: {static_pressure:.4f} in w.c.")
+                    f"excluded from fan selection. Manifold pressure only: {adjusted_pressure:.4f} in w.c.")
+            
+            # If adjusted pressure is negative or very low, natural draft is sufficient
+            if adjusted_pressure <= 0.11:
+                st.subheader("✅ Natural Draft System Recommended")
+                
+                if adjusted_pressure <= 0:
+                    st.success(f"Manifold pressure ({adjusted_pressure:.4f} in w.c.) shows positive atmospheric pressure. "
+                             "Natural draft with overdraft control is sufficient.")
+                else:
+                    st.success(f"Manifold pressure ({adjusted_pressure:.4f} in w.c.) is very low. "
+                             "Natural draft with overdraft control is sufficient.")
+                
+                st.write("**Recommended Equipment:**")
+                st.write("• **CDS3 Overdraft Control System** - Maintains optimal draft and prevents excessive draft")
+                
+                # Check if there are building heating appliances
+                has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
+                if has_heating:
+                    st.write("• **ODCS with RBD (Relief Backdraft Damper)** - Alternative option for building heating applications")
+                
+                st.session_state.data['products']['odcs'] = True
+                st.session_state.data['products']['draft_inducer'] = None
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("⬅️ Back", key="btn_back_cat4_natural"):
+                        st.session_state.step = 'confirm_appliances'
+                        st.rerun()
+                with col2:
+                    if st.button("➡️ Continue to Specification", key="btn_continue_cat4_natural", use_container_width=True):
+                        st.session_state.step = 'confirm_products'
+                        st.rerun()
+                
+                # Stop here - don't show fan selection
+                st.stop()
+            
+            # If we get here, need powered draft with adjusted pressure
+            static_pressure = adjusted_pressure
         
         # Get mean flue gas temperature for correction
         # Try to get from combined results, otherwise calculate from appliances

@@ -67,6 +67,7 @@ class ProductSelector:
             'draft_inducer_needed': True,
             'controller_type': None,
             'odcs_needed': False,
+            'odcs_with_rbd': False,
             'barometric_dampers': False,
             'warnings': [],
             'notes': []
@@ -96,10 +97,21 @@ class ProductSelector:
                 recommendation['draft_inducer_needed'] = False
                 recommendation['odcs_needed'] = True
                 recommendation['controller_type'] = 'CDS3_ONLY'
-                recommendation['notes'].append(
-                    f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
-                    "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
-                )
+                
+                # Check if there are building heating appliances (>200 MBH indicates heating)
+                has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
+                if has_heating:
+                    recommendation['odcs_with_rbd'] = True
+                    recommendation['notes'].append(
+                        f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
+                        "Natural draft with CDS3 overdraft control is sufficient. "
+                        "ODCS with RBD recommended for building heating applications."
+                    )
+                else:
+                    recommendation['notes'].append(
+                        f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
+                        "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+                    )
                 return recommendation
             else:
                 # Need mechanical draft, but ignore connector pressure loss
