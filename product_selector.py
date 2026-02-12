@@ -1,0 +1,408 @@
+"""
+Product Selection and Specification Module
+Helps users select the right US Draft Co. products and generates reports
+"""
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+
+class ProductSelector:
+    """
+    Intelligent product selection based on system requirements
+    """
+    
+    def __init__(self):
+        """Initialize with fan curve data"""
+        self.project_dir = Path('/mnt/project')
+        self.fan_curves = self._load_fan_curves()
+        
+    def _load_fan_curves(self):
+        """Load all fan curve data from Excel files"""
+        curves = {}
+        
+        # Load Draft Inducers (TRV, T9F, CBX)
+        try:
+            df_inducers = pd.read_excel(
+                self.project_dir / 'Draft_Inducers_Fan_Curves.xlsx', 
+                sheet_name=None
+            )
+            for sheet_name, data in df_inducers.items():
+                if sheet_name != 'Sheet26':  # Skip empty sheet
+                    curves[sheet_name] = data
+        except Exception as e:
+            print(f"Warning: Could not load draft inducer curves: {e}")
+        
+        # Load DEF fans (supply air)
+        try:
+            df_def = pd.read_excel(
+                self.project_dir / 'DEF_Fan_Curves.xlsx',
+                sheet_name=None
+            )
+            for sheet_name, data in df_def.items():
+                curves[sheet_name] = data
+        except Exception as e:
+            print(f"Warning: Could not load DEF curves: {e}")
+            
+        return curves
+    
+    def select_draft_inducer_series(self, cfm, static_pressure, user_preference=None):
+        """
+        Select appropriate draft inducer series based on requirements
+        
+        Args:
+            cfm: Required CFM
+            static_pressure: Required static pressure (in w.c.)
+            user_preference: 'CBX', 'TRV', or 'T9F' (optional)
+            
+        Returns:
+            Dictionary with series selection and specific model
+        """
+        # Define series capabilities
+        series_info = {
+            'TRV': {
+                'name': 'TRV Series - True Inline',
+                'cfm_range': (80, 2675),
+                'pressure_range': (0, 3.0),
+                'models': ['TRV002', 'TRV004', 'TRV011', 'TRV018', 'TRV025', 
+                          'TRV035', 'TRV050', 'TRV075', 'TRV090'],
+                'description': 'True inline configuration, compact design'
+            },
+            'T9F': {
+                'name': 'T9F Series - 90° Inline',
+                'cfm_range': (200, 6090),
+                'pressure_range': (0, 4.0),
+                'models': ['T9F004', 'T9F008', 'T9F015', 'T9F025', 'T9F035',
+                          'T9F050', 'T9F075', 'T9F100', 'T9F150'],
+                'description': '90° inline configuration for space savings'
+            },
+            'CBX': {
+                'name': 'CBX Series - Termination Mount',
+                'cfm_range': (3300, 17000),
+                'pressure_range': (0, 4.0),
+                'models': ['CBX007', 'CBX013', 'CBX022', 'CBX025', 'CBX035',
+                          'CBX050', 'CBX075'],
+                'description': 'Mounts at top of chimney/vent'
+            }
+        }
+        
+        # If user specified preference, check if it works
+        if user_preference:
+            if user_preference in series_info:
+                info = series_info[user_preference]
+                if (info['cfm_range'][0] <= cfm <= info['cfm_range'][1] and
+                    static_pressure <= info['pressure_range'][1]):
+                    # Find best model in preferred series
+                    model = self._find_best_model(cfm, static_pressure, info['models'])
+                    if model:
+                        return {
+                            'series': user_preference,
+                            'series_name': info['name'],
+                            'model': model,
+                            'description': info['description'],
+                            'user_selected': True
+                        }
+        
+        # Auto-select based on requirements
+        suitable_series = []
+        
+        for series, info in series_info.items():
+            if (info['cfm_range'][0] <= cfm <= info['cfm_range'][1] and
+                static_pressure <= info['pressure_range'][1]):
+                model = self._find_best_model(cfm, static_pressure, info['models'])
+                if model:
+                    suitable_series.append({
+                        'series': series,
+                        'series_name': info['name'],
+                        'model': model,
+                        'description': info['description'],
+                        'cfm_range': info['cfm_range'],
+                        'pressure_range': info['pressure_range']
+                    })
+        
+        if not suitable_series:
+            return None
+        
+        # Prefer smallest series that meets requirements
+        # Priority: TRV (most compact) > T9F > CBX
+        priority = {'TRV': 3, 'T9F': 2, 'CBX': 1}
+        suitable_series.sort(key=lambda x: priority.get(x['series'], 0), reverse=True)
+        
+        result = suitable_series[0]
+        result['user_selected'] = False
+        result['alternatives'] = suitable_series[1:] if len(suitable_series) > 1 else []
+        
+        return result
+    
+    def _find_best_model(self, cfm, static_pressure, model_list):
+        """
+        Find the best fan model from a list that meets requirements
+        
+        Args:
+            cfm: Required CFM
+            static_pressure: Required static pressure (in w.c.)
+            model_list: List of model names to check
+            
+        Returns:
+            Model name or None
+        """
+        suitable_models = []
+        
+        for model in model_list:
+            if model in self.fan_curves:
+                curve_data = self.fan_curves[model]
+                
+                # Check if this model can deliver required CFM at required pressure
+                if self._can_deliver(curve_data, cfm, static_pressure):
+                    # Calculate how much excess capacity (larger = more oversized)
+                    max_cfm = curve_data['CFM'].max()
+                    oversize_factor = max_cfm / cfm
+                    
+                    suitable_models.append({
+                        'model': model,
+                        'max_cfm': max_cfm,
+                        'oversize_factor': oversize_factor
+                    })
+        
+        if not suitable_models:
+            return None
+        
+        # Select model with smallest acceptable oversize (most efficient)
+        suitable_models.sort(key=lambda x: x['oversize_factor'])
+        return suitable_models[0]['model']
+    
+    def _can_deliver(self, curve_data, required_cfm, required_pressure):
+        """
+        Check if fan curve can deliver required CFM at required pressure
+        
+        Args:
+            curve_data: DataFrame with CFM and IN WC columns
+            required_cfm: Required airflow
+            required_pressure: Required static pressure
+            
+        Returns:
+            True if fan can deliver, False otherwise
+        """
+        # Interpolate pressure at required CFM
+        try:
+            cfm_values = curve_data['CFM'].values
+            pressure_values = curve_data['IN WC'].values
+            
+            # Fan must be able to deliver at least required CFM
+            if required_cfm > cfm_values.max():
+                return False
+            
+            # Interpolate to find pressure at required CFM
+            available_pressure = np.interp(required_cfm, cfm_values[::-1], pressure_values[::-1])
+            
+            # Fan must deliver at least required pressure
+            return available_pressure >= required_pressure
+            
+        except Exception as e:
+            print(f"Error checking fan capacity: {e}")
+            return False
+    
+    def select_supply_fan(self, combustion_air_cfm, user_preference=None):
+        """
+        Select appropriate supply air fan for combustion air
+        
+        Args:
+            combustion_air_cfm: Required combustion air in CFM
+            user_preference: 'PRIO' or 'TAF' (optional)
+            
+        Returns:
+            Dictionary with fan selection
+        """
+        # Define supply fan capabilities
+        fan_info = {
+            'PRIO': {
+                'name': 'PRIO Series - Premium Indoor/Outdoor',
+                'cfm_range': (0, 3000),
+                'description': 'Premium design, indoor/outdoor rated'
+            },
+            'TAF': {
+                'name': 'TAF Series - Termination Air Fan',
+                'cfm_range': (0, 6000),
+                'description': 'High capacity termination mount'
+            }
+        }
+        
+        suitable_fans = []
+        
+        for fan, info in fan_info.items():
+            if combustion_air_cfm <= info['cfm_range'][1]:
+                suitable_fans.append({
+                    'series': fan,
+                    'name': info['name'],
+                    'description': info['description'],
+                    'cfm_capacity': info['cfm_range'][1]
+                })
+        
+        # If user has preference and it works, use it
+        if user_preference and user_preference in [f['series'] for f in suitable_fans]:
+            result = [f for f in suitable_fans if f['series'] == user_preference][0]
+            result['user_selected'] = True
+            return result
+        
+        # Default to PRIO if it can handle it, otherwise TAF
+        if suitable_fans:
+            result = suitable_fans[0]
+            result['user_selected'] = False
+            return result
+        
+        return None
+    
+    def select_controller(self, num_appliances, needs_vcs, needs_odcs, needs_pas, 
+                         wants_touchscreen):
+        """
+        Select appropriate controller based on system needs
+        
+        Args:
+            num_appliances: Number of appliances
+            needs_vcs: Boolean - needs vent control system
+            needs_odcs: Boolean - needs overdraft control
+            needs_pas: Boolean - needs pressure air system (supply air)
+            wants_touchscreen: Boolean - user wants touchscreen
+            
+        Returns:
+            Dictionary with controller selection
+        """
+        # Build configuration suffix
+        config_parts = []
+        if needs_vcs:
+            config_parts.append('V')
+        if needs_pas:
+            config_parts.append('P')
+        if needs_odcs:
+            config_parts.append('O')
+        
+        # Sort for consistency (O, P, V alphabetical)
+        config_parts.sort()
+        config_suffix = ''.join(config_parts)
+        
+        if not config_suffix:
+            config_suffix = 'V'  # Default to VCS
+        
+        # Select controller based on appliance count and features
+        if num_appliances == 1:
+            if wants_touchscreen or needs_pas or needs_odcs:
+                controller = f"V150-{config_suffix}"
+                display = "LCD with 4 buttons"
+            else:
+                controller = f"H100-{config_suffix}"
+                display = "LCD"
+        elif num_appliances <= 2:
+            controller = f"V150-{config_suffix}"
+            display = "LCD with 4 buttons"
+        elif num_appliances <= 6:
+            if wants_touchscreen:
+                controller = f"V250-{config_suffix}"
+                display = "4\" Touchscreen"
+            else:
+                controller = f"V250-{config_suffix}"
+                display = "4\" Touchscreen (standard)"
+        elif num_appliances <= 15:
+            controller = f"V350-{config_suffix}"
+            display = "7\" Touchscreen"
+        else:
+            controller = f"V350-{config_suffix}"
+            display = "7\" Touchscreen"
+        
+        return {
+            'model': controller,
+            'display': display,
+            'configuration': config_suffix,
+            'max_appliances': num_appliances,
+            'features': {
+                'vcs': needs_vcs,
+                'odcs': needs_odcs,
+                'pas': needs_pas
+            }
+        }
+    
+    def plot_fan_and_system_curves(self, fan_model, system_cfm, system_pressure,
+                                   title="Fan Performance Curve"):
+        """
+        Plot fan curve with system operating point
+        
+        Args:
+            fan_model: Fan model name (e.g., 'TRV025')
+            system_cfm: System required CFM
+            system_pressure: System required pressure (in w.c.)
+            title: Plot title
+            
+        Returns:
+            matplotlib figure object
+        """
+        if fan_model not in self.fan_curves:
+            return None
+        
+        curve_data = self.fan_curves[fan_model]
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot fan curve
+        ax.plot(curve_data['CFM'], curve_data['IN WC'], 
+               'b-', linewidth=2, label=f'{fan_model} Performance')
+        ax.fill_between(curve_data['CFM'], 0, curve_data['IN WC'], alpha=0.1)
+        
+        # Plot system operating point
+        ax.plot(system_cfm, system_pressure, 'ro', markersize=10, 
+               label=f'System Point ({system_cfm:.0f} CFM, {system_pressure:.3f}" w.c.)')
+        
+        # Create simple system curve (parabolic)
+        # System curve: SP = k * Q^2, where k = SP / Q^2
+        k = system_pressure / (system_cfm ** 2)
+        cfm_range = np.linspace(0, curve_data['CFM'].max(), 100)
+        system_curve = k * (cfm_range ** 2)
+        ax.plot(cfm_range, system_curve, 'r--', linewidth=1.5, 
+               alpha=0.7, label='System Resistance Curve')
+        
+        # Formatting
+        ax.set_xlabel('Airflow (CFM)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Static Pressure (inches w.c.)', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+        
+        # Set reasonable axis limits
+        ax.set_xlim(0, curve_data['CFM'].max() * 1.1)
+        ax.set_ylim(0, curve_data['IN WC'].max() * 1.1)
+        
+        plt.tight_layout()
+        return fig
+    
+    def get_datasheet_path(self, product_code):
+        """
+        Get path to product datasheet PDF
+        
+        Args:
+            product_code: Product identifier (e.g., 'TRV', 'V250', 'CDS3')
+            
+        Returns:
+            Path to PDF or None
+        """
+        # Map product codes to datasheet files
+        datasheet_map = {
+            'TRV': 'TRV_Data_Sheet_0125_1.pdf',
+            'T9F': 'T9F_Data_Sheet_0125_1.pdf',
+            'CBX': 'CBX_Data_Sheet_0126_1.pdf',
+            'V150': 'V150_Data_Sheet_0125_1.pdf',
+            'V250': 'V250_Data_Sheet_0125_1.pdf',
+            'V300': 'V300_Data_Sheet_0125_1.pdf',
+            'V350': 'V350_Data_Sheet_0125_1.pdf',
+            'H100': 'H100_Data_Sheet_0125_1.pdf',
+            'CDS3': 'CDS3_Brochure_0525_1.pdf',
+            'PRIO': 'PRIO_Data_Sheet_0522_1.pdf',
+            'TAF': 'TAF_Data_Sheet_0125_1.pdf',
+            'RB': 'RB_Data_Sheet_0125_1.pdf'
+        }
+        
+        if product_code in datasheet_map:
+            path = self.project_dir / datasheet_map[product_code]
+            if path.exists():
+                return path
+        
+        return None

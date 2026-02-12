@@ -196,7 +196,7 @@ if st.session_state.step == 'project_name':
     st.subheader("📋 Project Information")
     st.write("Let's start by getting some basic information about your project.")
     
-    project_name = st.text_input("Project Name:", placeholder="e.g., Smith Building Boiler Room")
+    project_name = st.text_input("Project Name:", placeholder="e.g., USR Boiler Room")
     
     if st.button("➡️ Next", key="btn_project_name", use_container_width=True):
         if project_name:
@@ -1722,13 +1722,433 @@ elif st.session_state.step == 'results':
     
     col1, col2 = st.columns(2)
     with col1:
+        if st.button("🛒 Select Products & Generate Reports", key="btn_select_products", use_container_width=True):
+            st.session_state.step = 'product_selection_start'
+            st.rerun()
+    with col2:
         if st.button("🔄 New Analysis", key="btn_new_analysis", use_container_width=True):
             # Clear all data
             st.session_state.data = {}
             st.session_state.step = 'project_name'
             st.rerun()
+
+# ============================================================================
+# PRODUCT SELECTION & REPORT GENERATION STEPS
+# ============================================================================
+
+# STEP: Product Selection Start
+elif st.session_state.step == 'product_selection_start':
+    st.subheader("🛒 Product Selection & Report Generation")
+    
+    st.success("✅ System analysis complete!")
+    
+    st.write("**CARL can help you:**")
+    st.write("• Select the right US Draft Co. products for your system")
+    st.write("• Generate fan performance curves")
+    st.write("• Create a comprehensive sizing report")
+    st.write("• Generate CSI Section 23 51 10 specification")
+    st.write("• Provide product datasheets")
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Back to Results", key="btn_back_to_results"):
+            st.session_state.step = 'results'
+            st.rerun()
     with col2:
-        st.info("📄 PDF Report Generation - Coming Soon!")
+        if st.button("➡️ Start Product Selection", key="btn_start_product_sel", use_container_width=True):
+            # Initialize product selection data
+            st.session_state.data['products'] = {}
+            st.session_state.step = 'draft_inducer_type'
+            st.rerun()
+
+# STEP: Draft Inducer Type Selection
+elif st.session_state.step == 'draft_inducer_type':
+    from product_selector import ProductSelector
+    
+    selector = ProductSelector()
+    
+    # Get system requirements
+    result = st.session_state.data.get('results')
+    worst = result['worst_case'].get('worst_case')
+    all_op = result.get('all_operating')
+    
+    total_cfm = all_op['combined']['total_cfm'] if all_op else 0
+    static_pressure = abs(worst['total_available_draft'])
+    
+    # Determine if draft inducer is needed
+    atm_pressure = -worst['total_available_draft']
+    cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
+    cat_limits = cat_info.get('pressure_range', (-0.08, -0.03))
+    need_vcs = atm_pressure > cat_limits[1]  # Insufficient draft
+    
+    if not need_vcs:
+        # Skip to controller if no VCS needed
+        st.session_state.data['products']['draft_inducer'] = None
+        st.session_state.step = 'controller_touchscreen'
+        st.rerun()
+    else:
+        st.subheader("🌀 Draft Inducer Selection")
+        
+        st.write(f"**System Requirements:**")
+        st.write(f"• Airflow: {total_cfm:.0f} CFM")
+        st.write(f"• Static Pressure: {static_pressure:.3f} in w.c.")
+        
+        st.markdown("---")
+        st.write("**Select draft inducer configuration:**")
+        
+        # Check which series can work
+        options = []
+        
+        # Check TRV
+        trv_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'TRV')
+        if trv_selection:
+            options.append(('TRV', trv_selection))
+        
+        # Check T9F
+        t9f_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'T9F')
+        if t9f_selection:
+            options.append(('T9F', t9f_selection))
+        
+        # Check CBX
+        cbx_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'CBX')
+        if cbx_selection:
+            options.append(('CBX', cbx_selection))
+        
+        # Get CARL recommendation
+        auto_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, None)
+        
+        # Create columns for buttons
+        num_options = len(options) + 1  # +1 for auto
+        cols = st.columns(num_options)
+        
+        for idx, (series, selection) in enumerate(options):
+            with cols[idx]:
+                is_recommended = auto_selection and auto_selection['series'] == series
+                label = f"{'⭐ ' if is_recommended else ''}{series}"
+                if st.button(f"{label}\n{selection['description']}", key=f"btn_inducer_{series}", use_container_width=True):
+                    st.session_state.data['products']['draft_inducer'] = selection
+                    st.session_state.step = 'controller_touchscreen'
+                    st.rerun()
+        
+        # CARL Recommends button
+        with cols[-1]:
+            if st.button(f"⭐ CARL Recommends\n{auto_selection['series_name'] if auto_selection else 'Auto-Select'}", 
+                        key="btn_inducer_auto", use_container_width=True):
+                st.session_state.data['products']['draft_inducer'] = auto_selection
+                st.session_state.step = 'controller_touchscreen'
+                st.rerun()
+        
+        st.markdown("---")
+        if st.button("⬅️ Back", key="btn_inducer_back"):
+            st.session_state.step = 'product_selection_start'
+            st.rerun()
+
+# STEP: Controller Touchscreen Preference
+elif st.session_state.step == 'controller_touchscreen':
+    st.subheader("🎛️ Controller Selection")
+    
+    num_appliances = st.session_state.data['num_appliances']
+    
+    st.write(f"**System:** {num_appliances} appliance(s)")
+    st.write("")
+    st.write("**Do you want a touchscreen controller?**")
+    
+    st.info("💡 Touchscreen controllers provide easier operation and better visibility. LCD controllers are more economical.")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("⬅️ Back", key="btn_touch_back"):
+            if st.session_state.data['products'].get('draft_inducer'):
+                st.session_state.step = 'draft_inducer_type'
+            else:
+                st.session_state.step = 'product_selection_start'
+            st.rerun()
+    
+    with col2:
+        if st.button("📱 Yes - Touchscreen", key="btn_touch_yes", use_container_width=True):
+            st.session_state.data['wants_touchscreen'] = True
+            st.session_state.step = 'supply_air_option'
+            st.rerun()
+    
+    with col3:
+        if st.button("📟 No - LCD Display", key="btn_touch_no", use_container_width=True):
+            st.session_state.data['wants_touchscreen'] = False
+            st.session_state.step = 'supply_air_option'
+            st.rerun()
+
+# STEP: Supply Air Option
+elif st.session_state.step == 'supply_air_option':
+    st.subheader("💨 Combustion Air System")
+    
+    comb_air = st.session_state.data.get('combustion_air', {})
+    combustion_air_cfm = comb_air.get('combustion_air_cfm', 0)
+    
+    st.write(f"**Combustion Air Required:** {combustion_air_cfm:.0f} CFM")
+    st.write("")
+    st.write("**Would you like to add a mechanical supply air fan (PAS)?**")
+    
+    st.info("💡 PAS (Pressure Air System) provides positive combustion air delivery. Alternative is natural ventilation through louvers.")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("⬅️ Back", key="btn_supply_back"):
+            st.session_state.step = 'controller_touchscreen'
+            st.rerun()
+    
+    with col2:
+        if st.button("✅ Yes - Add PAS", key="btn_supply_yes", use_container_width=True):
+            st.session_state.data['wants_pas'] = True
+            st.session_state.step = 'supply_fan_type'
+            st.rerun()
+    
+    with col3:
+        if st.button("❌ No - Use Louvers", key="btn_supply_no", use_container_width=True):
+            st.session_state.data['wants_pas'] = False
+            st.session_state.data['products']['supply_fan'] = None
+            st.session_state.step = 'confirm_products'
+            st.rerun()
+
+# STEP: Supply Fan Type
+elif st.session_state.step == 'supply_fan_type':
+    from product_selector import ProductSelector
+    
+    selector = ProductSelector()
+    
+    comb_air = st.session_state.data.get('combustion_air', {})
+    combustion_air_cfm = comb_air.get('combustion_air_cfm', 0)
+    
+    st.subheader("🌬️ Supply Air Fan Selection")
+    
+    st.write(f"**Required:** {combustion_air_cfm:.0f} CFM")
+    st.write("")
+    st.write("**Select supply air fan series:**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("⬅️ Back", key="btn_fan_type_back"):
+            st.session_state.step = 'supply_air_option'
+            st.rerun()
+    
+    with col2:
+        if st.button("🏢 PRIO Series\nPremium Indoor/Outdoor", key="btn_prio", use_container_width=True):
+            prio = selector.select_supply_fan(combustion_air_cfm, 'PRIO')
+            st.session_state.data['products']['supply_fan'] = prio
+            st.session_state.step = 'confirm_products'
+            st.rerun()
+    
+    with col3:
+        if st.button("🏭 TAF Series\nHigh Capacity", key="btn_taf", use_container_width=True):
+            taf = selector.select_supply_fan(combustion_air_cfm, 'TAF')
+            st.session_state.data['products']['supply_fan'] = taf
+            st.session_state.step = 'confirm_products'
+            st.rerun()
+
+# STEP: Confirm Products
+elif st.session_state.step == 'confirm_products':
+    from product_selector import ProductSelector
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    
+    selector = ProductSelector()
+    
+    st.subheader("✅ Product Selection Summary")
+    
+    # Determine what systems are needed
+    result = st.session_state.data.get('results')
+    worst = result['worst_case'].get('worst_case')
+    atm_pressure = -worst['total_available_draft']
+    cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
+    cat_limits = cat_info.get('pressure_range', (-0.08, -0.03))
+    
+    need_vcs = atm_pressure > cat_limits[1]
+    need_odcs = atm_pressure < cat_limits[0] or (not need_vcs and atm_pressure > -0.01)  # Also recommend for stability
+    needs_pas = st.session_state.data.get('wants_pas', False)
+    
+    # Select controller
+    controller = selector.select_controller(
+        num_appliances=st.session_state.data['num_appliances'],
+        needs_vcs=need_vcs,
+        needs_odcs=need_odcs,
+        needs_pas=needs_pas,
+        wants_touchscreen=st.session_state.data.get('wants_touchscreen', False)
+    )
+    st.session_state.data['products']['controller'] = controller
+    
+    # Add ODCS if needed
+    if need_odcs:
+        st.session_state.data['products']['odcs'] = {
+            'model': 'CDS3',
+            'name': 'Connector Draft System',
+            'description': 'Modulating damper for precise draft control'
+        }
+    
+    # Display selected products
+    st.markdown("### 📦 Selected Products:")
+    
+    # Controller
+    st.write(f"**Controller:** {controller['model']}")
+    st.write(f"  - Display: {controller['display']}")
+    st.write(f"  - Configuration: {controller['configuration']}")
+    
+    # Draft Inducer
+    if st.session_state.data['products'].get('draft_inducer'):
+        inducer = st.session_state.data['products']['draft_inducer']
+        st.write(f"**Draft Inducer:** {inducer['model']} ({inducer['series_name']})")
+        st.write(f"  - {inducer['description']}")
+    
+    # ODCS
+    if st.session_state.data['products'].get('odcs'):
+        st.write(f"**Overdraft Control:** CDS3 - Connector Draft System")
+    
+    # Supply Fan
+    if st.session_state.data['products'].get('supply_fan'):
+        supply = st.session_state.data['products']['supply_fan']
+        st.write(f"**Supply Air Fan:** {supply['series']} - {supply['name']}")
+    
+    st.markdown("---")
+    
+    # Plot fan curve if draft inducer selected
+    if st.session_state.data['products'].get('draft_inducer'):
+        inducer = st.session_state.data['products']['draft_inducer']
+        all_op = result.get('all_operating')
+        total_cfm = all_op['combined']['total_cfm'] if all_op else 0
+        static_pressure = abs(worst['total_available_draft'])
+        
+        st.markdown("### 📊 Fan Performance Curve")
+        
+        fig = selector.plot_fan_and_system_curves(
+            fan_model=inducer['model'],
+            system_cfm=total_cfm,
+            system_pressure=static_pressure,
+            title=f"{inducer['model']} Performance with System Operating Point"
+        )
+        
+        if fig:
+            st.pyplot(fig)
+            plt.close(fig)
+            
+            # Save figure for later use
+            buf = BytesIO()
+            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            st.session_state.data['fan_curve_image'] = buf.getvalue()
+    
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("⬅️ Modify Selection", key="btn_modify"):
+            st.session_state.step = 'draft_inducer_type'
+            st.rerun()
+    with col2:
+        if st.button("📄 Generate Reports", key="btn_generate", use_container_width=True):
+            st.session_state.step = 'generating_reports'
+            st.rerun()
+    with col3:
+        if st.button("🔄 New Analysis", key="btn_new_from_confirm"):
+            st.session_state.data = {}
+            st.session_state.step = 'project_name'
+            st.rerun()
+
+# STEP: Generating Reports
+elif st.session_state.step == 'generating_reports':
+    st.subheader("📝 Generating Reports...")
+    
+    with st.spinner("Creating comprehensive documentation..."):
+        import time
+        time.sleep(1)  # Brief pause for UX
+        
+        st.session_state.step = 'reports_complete'
+        st.rerun()
+
+# STEP: Reports Complete
+elif st.session_state.step == 'reports_complete':
+    from product_selector import ProductSelector
+    from csi_spec_generator import CSISpecificationGenerator
+    from docx import Document
+    from docx.shared import Inches
+    import io
+    
+    st.subheader("✅ Reports Generated!")
+    
+    st.success("All documentation has been generated successfully!")
+    
+    # Generate CSI Specification
+    spec_gen = CSISpecificationGenerator()
+    
+    # Prepare data for spec
+    project_info = {
+        'project_name': st.session_state.data['project_name'],
+        'location': f"{st.session_state.data['city']}, {st.session_state.data['state']} {st.session_state.data['zip_code']}"
+    }
+    
+    result = st.session_state.data.get('results')
+    worst = result['worst_case'].get('worst_case')
+    all_op = result.get('all_operating')
+    
+    system_data = {
+        'total_cfm': all_op['combined']['total_cfm'] if all_op else 0,
+        'static_pressure': abs(worst['total_available_draft']),
+        'is_condensing': worst['appliance']['category'] in ['cat_ii', 'cat_iv']
+    }
+    
+    # Generate specification
+    spec_doc = spec_gen.generate_specification(
+        project_info=project_info,
+        products_selected=st.session_state.data['products'],
+        system_data=system_data
+    )
+    
+    # Save spec to bytes
+    spec_buffer = io.BytesIO()
+    spec_doc.save(spec_buffer)
+    spec_buffer.seek(0)
+    
+    st.markdown("### 📥 Download Reports:")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # CSI Specification
+        st.download_button(
+            label="📋 CSI Specification (DOCX)",
+            data=spec_buffer.getvalue(),
+            file_name=f"{st.session_state.data['project_name']}_CSI_23_51_10.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="download_csi"
+        )
+        
+        # Fan curve image (if available)
+        if st.session_state.data.get('fan_curve_image'):
+            st.download_button(
+                label="📊 Fan Performance Curve (PNG)",
+                data=st.session_state.data['fan_curve_image'],
+                file_name=f"{st.session_state.data['project_name']}_Fan_Curve.png",
+                mime="image/png",
+                key="download_curve"
+            )
+    
+    with col2:
+        st.info("📄 Sizing Report with embedded calculations and datasheets coming in next update!")
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Back to Products", key="btn_back_products"):
+            st.session_state.step = 'confirm_products'
+            st.rerun()
+    with col2:
+        if st.button("🔄 New Analysis", key="btn_new_from_reports", use_container_width=True):
+            st.session_state.data = {}
+            st.session_state.step = 'project_name'
+            st.rerun()
 
 # Footer
 st.markdown("---")
