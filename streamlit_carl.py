@@ -1950,6 +1950,12 @@ elif st.session_state.step == 'draft_inducer_type':
         
         # Debug: Show what we're looking for
         with st.expander("🔍 Debug Info - Fan Selection Criteria"):
+            st.write(f"**Fan curves loaded:** {len(selector.fan_curves)}")
+            if len(selector.fan_curves) == 0:
+                st.error("❌ NO FAN CURVES LOADED! Check Excel files are in repository.")
+            else:
+                st.success(f"✅ {len(selector.fan_curves)} fan models available")
+            
             st.write(f"**Required CFM:** {total_cfm:.0f}")
             st.write(f"**Static Pressure (actual @ {mean_temp_f:.0f}°F):** {static_pressure:.4f} in w.c.")
             
