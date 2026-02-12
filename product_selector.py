@@ -81,23 +81,40 @@ class ProductSelector:
         
         # Get pressure data
         worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
-        manifold_pressure = abs(worst_case.get('total_available_draft', 0))
+        total_draft = worst_case.get('total_available_draft', 0)  # Negative value
+        manifold_pressure = abs(total_draft)  # Positive value for comparison
         
-        # GUARD RAIL 1: All Category IV - Ignore connector pressure loss
+        # GUARD RAIL 1: Category IV systems - Check if natural draft sufficient
         if all_cat_iv:
-            recommendation['notes'].append(
-                "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system."
-            )
-            # Recalculate effective pressure without connector loss
-            # (This is informational - actual selection logic should handle this)
+            # For Category IV, check manifold pressure requirement
+            # If manifold shows POSITIVE atmospheric pressure (negative draft), 
+            # this means natural draft is pushing in wrong direction - need mechanical draft
+            # If manifold pressure is very low (< 0.11), can use natural draft with control
+            
+            if manifold_pressure < 0.11:
+                # Very low pressure requirement - natural draft with CDS3 is sufficient
+                recommendation['draft_inducer_needed'] = False
+                recommendation['odcs_needed'] = True
+                recommendation['controller_type'] = 'CDS3_ONLY'
+                recommendation['notes'].append(
+                    f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
+                    "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+                )
+                return recommendation
+            else:
+                # Need mechanical draft, but ignore connector pressure loss
+                recommendation['notes'].append(
+                    "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system. "
+                    "Only manifold pressure used for fan selection."
+                )
         
-        # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) - CDS3 only
-        if manifold_pressure < 0.11:
+        # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) for non-Category IV - CDS3 only
+        elif manifold_pressure < 0.11:
             recommendation['draft_inducer_needed'] = False
             recommendation['odcs_needed'] = True
             recommendation['controller_type'] = 'CDS3_ONLY'
             recommendation['notes'].append(
-                f"Manifold pressure ({manifold_pressure:.3f} in w.c.) is under 0.11 in w.c. - "
+                f"Manifold pressure ({manifold_pressure:.4f} in w.c.) is under 0.11 in w.c. - "
                 "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
             )
             return recommendation
