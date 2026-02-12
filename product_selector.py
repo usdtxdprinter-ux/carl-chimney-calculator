@@ -51,6 +51,145 @@ class ProductSelector:
         
         return curves
     
+    def get_system_recommendation(self, appliances, calc_results, user_preferences=None):
+        """
+        Intelligent system recommendation with guard rails
+        
+        Args:
+            appliances: List of appliance dictionaries with category info
+            calc_results: Calculation results with pressure data
+            user_preferences: Dict with user's control preferences
+            
+        Returns:
+            Dict with intelligent product recommendations and warnings
+        """
+        recommendation = {
+            'draft_inducer_needed': True,
+            'controller_type': None,
+            'odcs_needed': False,
+            'barometric_dampers': False,
+            'warnings': [],
+            'notes': []
+        }
+        
+        # Analyze appliance categories
+        categories = [app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '') 
+                     for app in appliances]
+        all_cat_i = all(cat == 'I' for cat in categories)
+        all_cat_iv = all(cat == 'IV' for cat in categories)
+        has_cat_iv = any(cat == 'IV' for cat in categories)
+        
+        # Get pressure data
+        worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
+        manifold_pressure = abs(worst_case.get('total_available_draft', 0))
+        
+        # GUARD RAIL 1: All Category IV - Ignore connector pressure loss
+        if all_cat_iv:
+            recommendation['notes'].append(
+                "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system."
+            )
+            # Recalculate effective pressure without connector loss
+            # (This is informational - actual selection logic should handle this)
+        
+        # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) - CDS3 only
+        if manifold_pressure < 0.11:
+            recommendation['draft_inducer_needed'] = False
+            recommendation['odcs_needed'] = True
+            recommendation['controller_type'] = 'CDS3_ONLY'
+            recommendation['notes'].append(
+                f"Manifold pressure ({manifold_pressure:.3f} in w.c.) is under 0.11 in w.c. - "
+                "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+            )
+            return recommendation
+        
+        # GUARD RAIL 3: All Category I - Recommend barometric dampers
+        if all_cat_i:
+            recommendation['barometric_dampers'] = True
+            recommendation['notes'].append(
+                "All Category I appliances: KW Barometric Dampers recommended on all appliances "
+                "for draft regulation and spillage prevention."
+            )
+        
+        # Determine controller type based on system configuration
+        user_prefs = user_preferences or {}
+        wants_vcs = user_prefs.get('vcs', True)
+        wants_odcs = user_prefs.get('odcs', False)
+        wants_pas = user_prefs.get('pas', False)
+        wants_touchscreen = user_prefs.get('touchscreen', False)
+        
+        # Count active systems
+        system_count = sum([wants_vcs, wants_odcs, wants_pas])
+        
+        # GUARD RAIL 4: VCS+PAS or VCS+ODCS with touchscreen = V250
+        if system_count == 2 and wants_touchscreen:
+            if (wants_vcs and wants_pas) or (wants_vcs and wants_odcs):
+                recommendation['controller_type'] = 'V250'
+                config = []
+                if wants_vcs:
+                    config.append('VCS')
+                if wants_odcs:
+                    config.append('ODCS')
+                if wants_pas:
+                    config.append('PAS')
+                
+                config_str = '+'.join(config)
+                recommendation['notes'].append(
+                    f"Configuration: {config_str} with touchscreen - V250 recommended "
+                    f"(V350 is for 3+ systems or more complex applications)."
+                )
+        else:
+            # Standard controller selection
+            num_appliances = len(appliances)
+            
+            if wants_touchscreen:
+                if num_appliances <= 6 and system_count <= 2:
+                    recommendation['controller_type'] = 'V250'
+                else:
+                    recommendation['controller_type'] = 'V350'
+            else:
+                recommendation['controller_type'] = 'V150'
+        
+        return recommendation
+    
+    def adjust_pressure_for_categories(self, static_pressure, appliances, calc_results):
+        """
+        Adjust static pressure based on appliance categories
+        
+        For all Category IV systems, connector pressure loss should be ignored
+        since these are positive pressure systems
+        
+        Args:
+            static_pressure: Original static pressure calculation
+            appliances: List of appliance dictionaries
+            calc_results: Full calculation results
+            
+        Returns:
+            Adjusted static pressure and notes
+        """
+        categories = [app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '') 
+                     for app in appliances]
+        all_cat_iv = all(cat == 'IV' for cat in categories)
+        
+        notes = []
+        adjusted_pressure = static_pressure
+        
+        if all_cat_iv:
+            # For all Cat IV, ignore connector loss
+            worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
+            connector_result = worst_case.get('connector_result', {})
+            connector = connector_result.get('connector', {})
+            connector_loss = abs(connector.get('pressure_loss_inwc', 0))
+            
+            # Subtract connector loss from total requirement
+            adjusted_pressure = static_pressure - connector_loss
+            
+            notes.append(
+                f"Category IV system: Connector pressure loss ({connector_loss:.3f} in w.c.) "
+                f"removed from fan selection criteria. Adjusted pressure: {adjusted_pressure:.3f} in w.c."
+            )
+        
+        return adjusted_pressure, notes
+    
     def select_draft_inducer_series(self, cfm, static_pressure, user_preference=None, mean_temp_f=300):
         """
         Select appropriate draft inducer series based on requirements
@@ -157,6 +296,35 @@ class ProductSelector:
         result['alternatives'] = suitable_series[1:] if len(suitable_series) > 1 else []
         
         return result
+    
+    def get_barometric_damper_spec(self, appliances):
+        """
+        Get barometric damper specifications for Category I appliances
+        
+        Args:
+            appliances: List of appliances
+            
+        Returns:
+            List of barometric damper recommendations
+        """
+        dampers = []
+        
+        for i, app in enumerate(appliances, 1):
+            category = app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '')
+            
+            if category == 'I':
+                outlet_dia = app.get('outlet_diameter', 0)
+                
+                # Recommend KW barometric damper sized to appliance outlet
+                dampers.append({
+                    'appliance_num': i,
+                    'product': 'KW Barometric Damper',
+                    'size': f"{outlet_dia}\"",
+                    'description': f'Field-adjustable barometric draft regulator for {outlet_dia}" outlet',
+                    'purpose': 'Maintains constant overfire draft and prevents spillage'
+                })
+        
+        return dampers
     
     def _air_density(self, temp_f):
         """
