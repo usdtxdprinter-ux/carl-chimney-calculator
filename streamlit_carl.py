@@ -1932,32 +1932,70 @@ elif st.session_state.step == 'draft_inducer_type':
     all_op = result.get('all_operating')
     
     total_cfm = all_op['combined']['total_cfm'] if all_op else 0
-    static_pressure = abs(worst['total_available_draft'])
     
-    # Get mean flue gas temperature for correction
-    # Try to get from combined results, otherwise calculate from appliances
-    if all_op and 'combined' in all_op and 'weighted_avg_temp_f' in all_op['combined']:
-        mean_temp_f = all_op['combined']['weighted_avg_temp_f']
-    elif all_op and 'common_vent' in all_op:
-        # Try to get from common vent data
-        mean_temp_f = all_op['common_vent'].get('mean_temp_f', 300)
+    # Check if all appliances are Category IV
+    appliances = st.session_state.data.get('appliances', [])
+    categories = [app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '') 
+                 for app in appliances]
+    all_cat_iv = all(cat == 'IV' for cat in categories)
+    
+    # Get intelligent system recommendation
+    recommendation = selector.get_system_recommendation(appliances, result)
+    
+    # Check if draft inducer is even needed
+    if not recommendation['draft_inducer_needed']:
+        st.subheader("✅ Natural Draft System")
+        st.success("Based on system analysis, natural draft is sufficient for this application.")
+        
+        # Display recommendation notes
+        for note in recommendation['notes']:
+            st.info(f"ℹ️ {note}")
+        
+        if recommendation['odcs_needed']:
+            st.write("**Required Equipment:**")
+            st.write("• CDS3 Overdraft Control System - maintains optimal draft")
+            st.session_state.data['products']['odcs'] = True
+            st.session_state.data['products']['draft_inducer'] = None
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅️ Back", key="btn_back_natural"):
+                st.session_state.step = 'confirm_appliances'
+                st.rerun()
+        with col2:
+            if st.button("➡️ Continue to Specification", key="btn_continue_natural", use_container_width=True):
+                st.session_state.step = 'confirm_products'
+                st.rerun()
     else:
-        # Calculate from worst case appliance or use default
-        mean_temp_f = worst['appliance'].get('temp_f', 300)
+        # Need powered draft - continue with selection
+        
+        # Calculate static pressure
+        static_pressure = abs(worst['total_available_draft'])
+        
+        # GUARD RAIL: For Category IV, ignore connector pressure loss
+        if all_cat_iv:
+            connector_result = worst.get('connector_result', {})
+            connector = connector_result.get('connector', {})
+            connector_loss = abs(connector.get('pressure_loss_inwc', 0))
+            
+            # Remove connector loss from fan selection requirement
+            static_pressure = static_pressure - connector_loss
+            
+            st.info(f"ℹ️ **Category IV System:** Connector pressure loss ({connector_loss:.4f} in w.c.) "
+                    f"excluded from fan selection. Using only manifold pressure: {static_pressure:.4f} in w.c.")
+        
+        # Get mean flue gas temperature for correction
+        # Try to get from combined results, otherwise calculate from appliances
+        if all_op and 'combined' in all_op and 'weighted_avg_temp_f' in all_op['combined']:
+            mean_temp_f = all_op['combined']['weighted_avg_temp_f']
+        elif all_op and 'common_vent' in all_op:
+            # Try to get from common vent data
+            mean_temp_f = all_op['common_vent'].get('mean_temp_f', 300)
+        else:
+            # Calculate from worst case appliance or use default
+            mean_temp_f = worst['appliance'].get('temp_f', 300)
 
-    
-    # Determine if draft inducer is needed
-    atm_pressure = -worst['total_available_draft']
-    cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
-    cat_limits = cat_info.get('pressure_range', (-0.08, -0.03))
-    need_vcs = atm_pressure > cat_limits[1]  # Insufficient draft
-    
-    if not need_vcs:
-        # Skip to controller if no VCS needed
-        st.session_state.data['products']['draft_inducer'] = None
-        st.session_state.step = 'controller_touchscreen'
-        st.rerun()
-    else:
+        
         st.subheader("🌀 Draft Inducer Selection")
         
         st.write(f"**System Requirements:**")
