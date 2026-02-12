@@ -31,26 +31,14 @@ def get_calculator():
 
 calc = get_calculator()
 
-# Zip code to city/elevation database (sample - expand as needed)
-ZIP_DATABASE = {
-    '76111': {'city': 'Fort Worth', 'state': 'TX', 'elevation': 650},
-    '75001': {'city': 'Addison', 'state': 'TX', 'elevation': 645},
-    '80202': {'city': 'Denver', 'state': 'CO', 'elevation': 5280},
-    '10001': {'city': 'New York', 'state': 'NY', 'elevation': 33},
-    '90001': {'city': 'Los Angeles', 'state': 'CA', 'elevation': 285},
-    '60601': {'city': 'Chicago', 'state': 'IL', 'elevation': 594},
-    '33101': {'city': 'Miami', 'state': 'FL', 'elevation': 6},
-    '98101': {'city': 'Seattle', 'state': 'WA', 'elevation': 175},
-    '85001': {'city': 'Phoenix', 'state': 'AZ', 'elevation': 1086},
-    '02101': {'city': 'Boston', 'state': 'MA', 'elevation': 141}
-}
+# Initialize postal code lookup
+from postal_code_lookup import PostalCodeLookup
 
-def lookup_zip(zipcode):
-    """Look up city and elevation from zip code"""
-    zipcode = zipcode.strip()
-    if zipcode in ZIP_DATABASE:
-        return ZIP_DATABASE[zipcode]
-    return None
+@st.cache_resource
+def get_postal_lookup():
+    return PostalCodeLookup()
+
+postal_lookup = get_postal_lookup()
 
 def elevation_to_pressure(elevation_ft):
     """Convert elevation in feet to barometric pressure in inches Hg"""
@@ -225,48 +213,68 @@ elif st.session_state.step == 'zip_code':
     st.subheader("📍 Location")
     st.write(f"**Project:** {st.session_state.data['project_name']}")
     
-    zip_code = st.text_input("Enter ZIP Code:", placeholder="e.g., 76111")
+    zip_code = st.text_input("Enter ZIP/Postal Code:", placeholder="e.g., 76111 or M5H 2N2")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("⬅️ Back", key="btn_zip_back"):
-            st.session_state.step = 'project_name'
-            st.rerun()
-    with col2:
-        if st.button("➡️ Next", key="btn_zip_next", use_container_width=True):
-            if zip_code:
-                location = lookup_zip(zip_code)
-                if location:
+    # Try lookup if code entered
+    location = None
+    if zip_code:
+        location = postal_lookup.lookup(zip_code)
+    
+    # Show manual entry if code not found or if user hasn't entered code yet
+    if zip_code and not location:
+        st.warning(f"Postal code '{zip_code}' not recognized. Please enter location manually.")
+        manual_city = st.text_input("City:*", placeholder="e.g., Fort Worth")
+        manual_state = st.text_input("State/Province:*", placeholder="e.g., TX or ON", max_chars=2).upper()
+        manual_elev = st.number_input("Elevation (ft):*", min_value=0, max_value=15000, value=650, step=50)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅️ Back", key="btn_zip_back"):
+                st.session_state.step = 'project_name'
+                st.rerun()
+        with col2:
+            if st.button("➡️ Next", key="btn_zip_next", use_container_width=True):
+                if manual_city and manual_state and len(manual_state) == 2:
                     st.session_state.data['zip_code'] = zip_code
-                    st.session_state.data['city'] = location['city']
-                    st.session_state.data['state'] = location['state']
-                    st.session_state.data['elevation_ft'] = location['elevation']
-                    st.session_state.data['barometric_pressure'] = elevation_to_pressure(location['elevation'])
+                    st.session_state.data['city'] = manual_city
+                    st.session_state.data['state'] = manual_state
+                    st.session_state.data['elevation'] = manual_elev
+                    st.session_state.data['barometric_pressure'] = elevation_to_pressure(manual_elev)
                     st.session_state.step = 'vent_type'
                     st.rerun()
                 else:
-                    st.error("ZIP code not found. Please enter elevation manually.")
-                    manual_city = st.text_input("City:", placeholder="City name")
-                    manual_state = st.text_input("State:", placeholder="TX", max_chars=2)
-                    manual_elev = st.number_input("Elevation (ft):", min_value=0, max_value=15000, value=0)
-                    if st.button("Submit Manual Entry"):
-                        if manual_city and manual_state:
-                            st.session_state.data['zip_code'] = zip_code
-                            st.session_state.data['city'] = manual_city
-                            st.session_state.data['state'] = manual_state
-                            st.session_state.data['elevation_ft'] = manual_elev
-                            st.session_state.data['barometric_pressure'] = elevation_to_pressure(manual_elev)
-                            st.session_state.step = 'vent_type'
-                            st.rerun()
-            else:
-                st.error("Please enter a ZIP code")
+                    st.error("Please fill in all location fields")
+    
+    else:
+        # Normal flow - either no code entered yet, or code was found
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅️ Back", key="btn_zip_back"):
+                st.session_state.step = 'project_name'
+                st.rerun()
+        with col2:
+            if st.button("➡️ Next", key="btn_zip_next", use_container_width=True):
+                if not zip_code:
+                    st.error("Please enter a ZIP/Postal code")
+                elif location:
+                    # Show info message if estimated
+                    if location.get('estimated'):
+                        st.info(f"ℹ️ Location estimated based on postal code prefix: {location['city']}, {location['state']}")
+                    
+                    st.session_state.data['zip_code'] = zip_code
+                    st.session_state.data['city'] = location['city']
+                    st.session_state.data['state'] = location['state']
+                    st.session_state.data['elevation'] = location['elevation']
+                    st.session_state.data['barometric_pressure'] = elevation_to_pressure(location['elevation'])
+                    st.session_state.step = 'vent_type'
+                    st.rerun()
 
 # STEP: Vent Type
 elif st.session_state.step == 'vent_type':
     st.subheader("🔧 Chimney/Vent Type")
     st.write(f"**Project:** {st.session_state.data['project_name']}")
     st.write(f"**Location:** {st.session_state.data['city']}, {st.session_state.data['state']}")
-    st.write(f"**Elevation:** {st.session_state.data['elevation_ft']:,} ft (Barometric: {st.session_state.data['barometric_pressure']:.2f} in Hg)")
+    st.write(f"**Elevation:** {st.session_state.data['elevation']:,} ft (Barometric: {st.session_state.data['barometric_pressure']:.2f} in Hg)")
     
     st.write("\nSelect the chimney/vent type:")
     
@@ -1108,7 +1116,7 @@ elif st.session_state.step == 'results':
         "Value": [
             st.session_state.data['project_name'],
             f"{st.session_state.data['city']}, {st.session_state.data['state']} {st.session_state.data['zip_code']}",
-            f"{st.session_state.data['elevation_ft']:,} ft",
+            f"{st.session_state.data['elevation']:,} ft",
             f"{st.session_state.data['barometric_pressure']:.2f} in Hg",
             st.session_state.data['vent_type'],
             f"{st.session_state.data['temp_outside_f']}°F",
