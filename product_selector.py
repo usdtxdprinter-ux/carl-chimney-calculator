@@ -47,18 +47,31 @@ class ProductSelector:
             
         return curves
     
-    def select_draft_inducer_series(self, cfm, static_pressure, user_preference=None):
+    def select_draft_inducer_series(self, cfm, static_pressure, user_preference=None, mean_temp_f=300):
         """
         Select appropriate draft inducer series based on requirements
         
         Args:
             cfm: Required CFM
-            static_pressure: Required static pressure (in w.c.)
+            static_pressure: Required static pressure (in w.c.) at mean_temp_f
             user_preference: 'CBX', 'TRV', or 'T9F' (optional)
+            mean_temp_f: Mean flue gas temperature for density correction
             
         Returns:
             Dictionary with series selection and specific model
         """
+        # Fan curves are at 70°F standard air
+        # Need to correct system pressure to equivalent 70°F pressure
+        # SP_70 = SP_actual × (ρ_70 / ρ_actual)
+        
+        # Calculate density ratio for correction
+        rho_70 = self._air_density(70)  # lb/ft³ at 70°F
+        rho_actual = self._air_density(mean_temp_f)  # lb/ft³ at actual temp
+        density_ratio = rho_70 / rho_actual
+        
+        # Correct static pressure to 70°F equivalent
+        static_pressure_70f = static_pressure * density_ratio
+        
         # Define series capabilities
         series_info = {
             'TRV': {
@@ -79,7 +92,7 @@ class ProductSelector:
             },
             'CBX': {
                 'name': 'CBX Series - Termination Mount',
-                'cfm_range': (3300, 17000),
+                'cfm_range': (640, 17000),  # Updated based on actual curve data
                 'pressure_range': (0, 4.0),
                 'models': ['CBX007', 'CBX013', 'CBX022', 'CBX025', 'CBX035',
                           'CBX050', 'CBX075'],
@@ -92,16 +105,19 @@ class ProductSelector:
             if user_preference in series_info:
                 info = series_info[user_preference]
                 if (info['cfm_range'][0] <= cfm <= info['cfm_range'][1] and
-                    static_pressure <= info['pressure_range'][1]):
+                    static_pressure_70f <= info['pressure_range'][1]):
                     # Find best model in preferred series
-                    model = self._find_best_model(cfm, static_pressure, info['models'])
+                    model = self._find_best_model(cfm, static_pressure_70f, info['models'])
                     if model:
                         return {
                             'series': user_preference,
                             'series_name': info['name'],
                             'model': model,
                             'description': info['description'],
-                            'user_selected': True
+                            'user_selected': True,
+                            'corrected_pressure_70f': static_pressure_70f,
+                            'actual_pressure': static_pressure,
+                            'temp_correction_ratio': density_ratio
                         }
         
         # Auto-select based on requirements
@@ -109,8 +125,8 @@ class ProductSelector:
         
         for series, info in series_info.items():
             if (info['cfm_range'][0] <= cfm <= info['cfm_range'][1] and
-                static_pressure <= info['pressure_range'][1]):
-                model = self._find_best_model(cfm, static_pressure, info['models'])
+                static_pressure_70f <= info['pressure_range'][1]):
+                model = self._find_best_model(cfm, static_pressure_70f, info['models'])
                 if model:
                     suitable_series.append({
                         'series': series,
@@ -118,7 +134,10 @@ class ProductSelector:
                         'model': model,
                         'description': info['description'],
                         'cfm_range': info['cfm_range'],
-                        'pressure_range': info['pressure_range']
+                        'pressure_range': info['pressure_range'],
+                        'corrected_pressure_70f': static_pressure_70f,
+                        'actual_pressure': static_pressure,
+                        'temp_correction_ratio': density_ratio
                     })
         
         if not suitable_series:
@@ -134,6 +153,24 @@ class ProductSelector:
         result['alternatives'] = suitable_series[1:] if len(suitable_series) > 1 else []
         
         return result
+    
+    def _air_density(self, temp_f):
+        """
+        Calculate air density at given temperature
+        
+        Args:
+            temp_f: Temperature in Fahrenheit
+            
+        Returns:
+            Air density in lbm/ft³
+        """
+        temp_r = temp_f + 459.67  # Convert to Rankine
+        # Using ideal gas law: ρ = P/(R*T)
+        # Standard atmospheric pressure (14.7 psia = 2116.2 lbf/ft²)
+        P = 2116.2  # lbf/ft²
+        R = 53.35   # ft·lbf/(lbm·°R) for air
+        rho = P / (R * temp_r)
+        return rho
     
     def _find_best_model(self, cfm, static_pressure, model_list):
         """
@@ -277,41 +314,65 @@ class ProductSelector:
         if needs_odcs:
             config_parts.append('O')
         
-        # Sort for consistency (O, P, V alphabetical)
+        # Sort for consistency (alphabetical: O, P, V)
         config_parts.sort()
-        config_suffix = ''.join(config_parts)
+        config_suffix = ''.join(config_parts) if config_parts else 'V'
         
-        if not config_suffix:
-            config_suffix = 'V'  # Default to VCS
+        # Select controller based on touchscreen preference and appliance count
+        # V250: 1-6 appliances, 4" touchscreen
+        # V300: 1-4 appliances, 7" touchscreen  
+        # V350: 1-15 appliances, 7" touchscreen
+        # V150: 1-2 appliances, LCD with 4 buttons
+        # H100: 1 appliance, LCD
         
-        # Select controller based on appliance count and features
-        if num_appliances == 1:
-            if wants_touchscreen or needs_pas or needs_odcs:
-                controller = f"V150-{config_suffix}"
-                display = "LCD with 4 buttons"
-            else:
-                controller = f"H100-{config_suffix}"
-                display = "LCD"
-        elif num_appliances <= 2:
-            controller = f"V150-{config_suffix}"
-            display = "LCD with 4 buttons"
-        elif num_appliances <= 6:
-            if wants_touchscreen:
+        if wants_touchscreen:
+            # User wants touchscreen - select V250/V300/V350
+            if num_appliances <= 4:
+                # Could use V250, V300, or V350
+                # Prefer V300 for 1-4 (better display)
+                controller = f"V300-{config_suffix}"
+                display = "7\" Touchscreen"
+                base_model = "V300"
+            elif num_appliances <= 6:
+                # V250 or V350
                 controller = f"V250-{config_suffix}"
                 display = "4\" Touchscreen"
+                base_model = "V250"
+            elif num_appliances <= 15:
+                # V350 only
+                controller = f"V350-{config_suffix}"
+                display = "7\" Touchscreen"
+                base_model = "V350"
             else:
-                controller = f"V250-{config_suffix}"
-                display = "4\" Touchscreen (standard)"
-        elif num_appliances <= 15:
-            controller = f"V350-{config_suffix}"
-            display = "7\" Touchscreen"
+                # >15 appliances: V350
+                controller = f"V350-{config_suffix}"
+                display = "7\" Touchscreen"
+                base_model = "V350"
+            has_touchscreen = True
         else:
-            controller = f"V350-{config_suffix}"
-            display = "7\" Touchscreen"
+            # User wants LCD - select V150 or H100
+            if num_appliances == 1:
+                # H100 or V150
+                controller = f"H100-{config_suffix}"
+                display = "LCD"
+                base_model = "H100"
+            elif num_appliances <= 2:
+                # V150
+                controller = f"V150-{config_suffix}"
+                display = "LCD with 4 buttons"
+                base_model = "V150"
+            else:
+                # 3+ appliances but wants LCD - not recommended, upgrade to V250
+                controller = f"V250-{config_suffix}"
+                display = "4\" Touchscreen (required for 3+ appliances)"
+                base_model = "V250"
+                has_touchscreen = True  # Forced touchscreen
         
         return {
             'model': controller,
+            'base_model': base_model,
             'display': display,
+            'has_touchscreen': has_touchscreen if 'has_touchscreen' in locals() else False,
             'configuration': config_suffix,
             'max_appliances': num_appliances,
             'features': {

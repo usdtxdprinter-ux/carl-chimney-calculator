@@ -213,6 +213,7 @@ class EnhancedChimneyCalculator(ChimneyCalculator):
                                     manifold_config, temp_outside_f):
         """
         Complete analysis for worst-case appliance
+        Includes HIGH FIRE and LOW FIRE (turndown) analysis
         Connector + Manifold = Total available draft
         
         Args:
@@ -222,19 +223,18 @@ class EnhancedChimneyCalculator(ChimneyCalculator):
             temp_outside_f: Outside temperature
             
         Returns:
-            Complete worst-case analysis
+            Complete worst-case analysis including low-fire scenarios
         """
         worst_case_results = []
         
         for i, app in enumerate(appliances):
-            # Analyze this appliance's connector
+            # HIGH FIRE ANALYSIS (full input)
             connector_result = self.analyze_connector(
                 appliance=app,
                 connector_config=connector_configs[i],
                 temp_outside_f=temp_outside_f
             )
             
-            # Analyze manifold with all appliances
             manifold_all = self.analyze_manifold_system(
                 appliances=appliances,
                 manifold_config=manifold_config,
@@ -242,11 +242,54 @@ class EnhancedChimneyCalculator(ChimneyCalculator):
                 operating_scenario='all'
             )
             
-            # Total available draft = connector + manifold
             total_available_draft = (
                 connector_result['connector']['available_draft_inwc'] +
                 manifold_all['common_vent']['available_draft_inwc']
             )
+            
+            # LOW FIRE ANALYSIS (turndown)
+            low_fire_result = None
+            turndown_ratio = app.get('turndown_ratio', 1)
+            
+            if turndown_ratio > 1:
+                # Create low-fire appliance (reduced input)
+                low_fire_app = app.copy()
+                low_fire_app['mbh'] = app['mbh'] / turndown_ratio
+                low_fire_app['firing_rate'] = 'low'
+                
+                # Analyze connector at low fire
+                connector_low = self.analyze_connector(
+                    appliance=low_fire_app,
+                    connector_config=connector_configs[i],
+                    temp_outside_f=temp_outside_f
+                )
+                
+                # Analyze manifold with this appliance at low fire, others at high fire
+                low_fire_appliances = appliances.copy()
+                low_fire_appliances[i] = low_fire_app
+                
+                manifold_low = self.analyze_manifold_system(
+                    appliances=low_fire_appliances,
+                    manifold_config=manifold_config,
+                    temp_outside_f=temp_outside_f,
+                    operating_scenario='all'
+                )
+                
+                total_available_draft_low = (
+                    connector_low['connector']['available_draft_inwc'] +
+                    manifold_low['common_vent']['available_draft_inwc']
+                )
+                
+                low_fire_result = {
+                    'appliance': low_fire_app,
+                    'connector_draft': connector_low['connector']['available_draft_inwc'],
+                    'manifold_draft': manifold_low['common_vent']['available_draft_inwc'],
+                    'total_available_draft': total_available_draft_low,
+                    'connector_result': connector_low,
+                    'manifold_result': manifold_low,
+                    'turndown_ratio': turndown_ratio,
+                    'firing_rate_percent': 100 / turndown_ratio
+                }
             
             worst_case_results.append({
                 'appliance_id': i + 1,
@@ -255,14 +298,23 @@ class EnhancedChimneyCalculator(ChimneyCalculator):
                 'manifold_draft': manifold_all['common_vent']['available_draft_inwc'],
                 'total_available_draft': total_available_draft,
                 'connector_result': connector_result,
-                'manifold_result': manifold_all
+                'manifold_result': manifold_all,
+                'low_fire': low_fire_result  # NEW: Low fire analysis
             })
         
-        # Find actual worst case (lowest total available draft)
-        worst_case = min(worst_case_results, key=lambda x: x['total_available_draft'])
+        # Find worst case at HIGH FIRE (lowest total available draft)
+        worst_case_high = min(worst_case_results, key=lambda x: x['total_available_draft'])
+        
+        # Find worst case at LOW FIRE (if any appliances have turndown)
+        worst_case_low = None
+        low_fire_cases = [x for x in worst_case_results if x.get('low_fire')]
+        if low_fire_cases:
+            worst_case_low = min(low_fire_cases, 
+                                key=lambda x: x['low_fire']['total_available_draft'])
         
         return {
-            'worst_case': worst_case,
+            'worst_case': worst_case_high,  # High fire worst case
+            'worst_case_low_fire': worst_case_low,  # Low fire worst case (if applicable)
             'all_appliances': worst_case_results
         }
     

@@ -513,15 +513,63 @@ elif st.session_state.step == 'appliance_1_fuel':
     with col2:
         if st.button("🔥 Natural Gas", key="fuel_ng", use_container_width=True):
             st.session_state.data['current_fuel'] = 'natural_gas'
-            st.session_state.step = 'save_appliance'
+            st.session_state.step = 'appliance_1_turndown'
             st.rerun()
         if st.button("⛽ Oil", key="fuel_oil", use_container_width=True):
             st.session_state.data['current_fuel'] = 'oil'
-            st.session_state.step = 'save_appliance'
+            st.session_state.step = 'appliance_1_turndown'
             st.rerun()
     with col3:
         if st.button("🔥 LP Gas (Propane)", key="fuel_lp", use_container_width=True):
             st.session_state.data['current_fuel'] = 'lp_gas'
+            st.session_state.step = 'appliance_1_turndown'
+            st.rerun()
+
+# STEP: Appliance Turndown Ratio
+elif st.session_state.step == 'appliance_1_turndown':
+    app_num = get_current_appliance_num()
+    st.subheader(f"🔄 Appliance #{app_num} - Turndown Ratio")
+    
+    st.write(f"**Input:** {st.session_state.data['current_mbh']} MBH")
+    st.write(f"**Fuel:** {st.session_state.data['current_fuel'].replace('_', ' ').title()}")
+    
+    st.info("💡 **Turndown ratio** is the ratio of maximum firing rate to minimum firing rate. For example, a 10:1 turndown means the appliance can modulate from 100% down to 10% (1/10th) of its rated input.")
+    
+    st.write("**Common Turndown Ratios:**")
+    st.write("• On/Off appliances: 1:1 (no turndown)")
+    st.write("• Two-stage: 2:1")
+    st.write("• Modulating condensing boilers: 5:1 to 10:1")
+    st.write("• High-efficiency modulating: 10:1 to 20:1")
+    st.write("• Ultra-high efficiency: 25:1+")
+    
+    st.markdown("---")
+    
+    turndown_ratio = st.number_input(
+        "Turndown Ratio (e.g., 10 for 10:1):",
+        min_value=1,
+        max_value=50,
+        value=5,
+        step=1,
+        help="Enter turndown ratio. 1 = on/off, 5 = 5:1, 10 = 10:1, etc."
+    )
+    
+    # Calculate low fire input
+    low_fire_mbh = st.session_state.data['current_mbh'] / turndown_ratio
+    
+    st.write("")
+    st.success(f"**High Fire:** {st.session_state.data['current_mbh']:.0f} MBH (100%)")
+    st.success(f"**Low Fire:** {low_fire_mbh:.1f} MBH ({100/turndown_ratio:.1f}%)")
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Back", key="btn_turndown_back"):
+            st.session_state.step = 'appliance_1_fuel'
+            st.rerun()
+    with col2:
+        if st.button("➡️ Next", key="btn_turndown_next", use_container_width=True):
+            st.session_state.data['current_turndown'] = turndown_ratio
             st.session_state.step = 'save_appliance'
             st.rerun()
 
@@ -536,6 +584,7 @@ elif st.session_state.step == 'save_appliance':
         'temp_f': st.session_state.data['current_temp'],
         'category': st.session_state.data['current_category'],
         'fuel_type': st.session_state.data['current_fuel'],
+        'turndown_ratio': st.session_state.data.get('current_turndown', 1),
         'appliance_number': get_current_appliance_num()
     }
     
@@ -554,7 +603,7 @@ elif st.session_state.step == 'save_appliance':
             st.session_state.data['appliances'].append(dup_app)
     
     # Clear current appliance data
-    for key in ['current_mbh', 'current_outlet', 'current_co2', 'current_temp', 'current_category', 'current_fuel']:
+    for key in ['current_mbh', 'current_outlet', 'current_co2', 'current_temp', 'current_category', 'current_fuel', 'current_turndown']:
         if key in st.session_state.data:
             del st.session_state.data[key]
     
@@ -1064,12 +1113,14 @@ elif st.session_state.step == 'results':
         "CO₂ (%)": [],
         "Flue Temp (°F)": [],
         "Fuel Type": [],
-        "Outlet Dia (\")": []
+        "Outlet Dia (\")": [],
+        "Turndown": []
     }
     
     for app in st.session_state.data['appliances']:
         cat_name = calc.appliance_categories[app['category']]['name']
         fuel_name = app['fuel_type'].replace('_', ' ').title()
+        turndown = app.get('turndown_ratio', 1)
         
         appliance_data["Appliance"].append(f"#{app['appliance_number']}")
         appliance_data["Input (MBH)"].append(f"{app['mbh']:,.0f}")
@@ -1078,6 +1129,7 @@ elif st.session_state.step == 'results':
         appliance_data["Flue Temp (°F)"].append(f"{app['temp_f']}")
         appliance_data["Fuel Type"].append(fuel_name)
         appliance_data["Outlet Dia (\")"].append(f"{app['outlet_diameter']}")
+        appliance_data["Turndown"].append(f"{turndown}:1" if turndown > 1 else "On/Off")
     
     st.table(pd.DataFrame(appliance_data))
     
@@ -1253,6 +1305,80 @@ elif st.session_state.step == 'results':
     st.table(pd.DataFrame(system_summary))
     
     st.info("ℹ️ **Important Relationship:** Positive draft (+) = Negative atmospheric pressure (−) | Negative draft (−) = Positive atmospheric pressure (+)")
+    
+    # ========================================================================
+    # LOW FIRE (TURNDOWN) ANALYSIS
+    # ========================================================================
+    worst_low = result['worst_case'].get('worst_case_low_fire')
+    
+    if worst_low:
+        st.markdown("## 🔥 Low Fire (Turndown) Analysis")
+        
+        st.info("⚠️ **Critical:** Modulating appliances must maintain adequate draft at minimum firing rate. Low fire conditions have reduced flow and temperature, which can significantly affect available draft.")
+        
+        low_fire_data = worst_low['low_fire']
+        turndown = low_fire_data['turndown_ratio']
+        firing_pct = low_fire_data['firing_rate_percent']
+        
+        st.write(f"**Worst Case Appliance:** #{worst_low['appliance_id']}")
+        st.write(f"**Turndown Ratio:** {turndown}:1")
+        st.write(f"**Low Fire:** {firing_pct:.1f}% of rated input ({low_fire_data['appliance']['mbh']:.1f} MBH)")
+        
+        st.markdown("---")
+        
+        # Create comparison table: High Fire vs Low Fire
+        comparison_data = {
+            "Condition": ["High Fire (100%)", f"Low Fire ({firing_pct:.1f}%)"],
+            "Input (MBH)": [
+                f"{worst['appliance']['mbh']:.0f}",
+                f"{low_fire_data['appliance']['mbh']:.1f}"
+            ],
+            "Connector Draft": [
+                f"{worst['connector_draft']:.4f}",
+                f"{low_fire_data['connector_draft']:.4f}"
+            ],
+            "Manifold Draft": [
+                f"{worst['manifold_draft']:.4f}",
+                f"{low_fire_data['manifold_draft']:.4f}"
+            ],
+            "TOTAL DRAFT": [
+                f"**{worst['total_available_draft']:.4f}**",
+                f"**{low_fire_data['total_available_draft']:.4f}**"
+            ],
+            "Atm Pressure": [
+                f"{-worst['total_available_draft']:.4f}",
+                f"{-low_fire_data['total_available_draft']:.4f}"
+            ]
+        }
+        
+        st.table(pd.DataFrame(comparison_data))
+        
+        # Check compliance at low fire
+        if worst['appliance']['category'] != 'custom':
+            cat_info = calc.appliance_categories[worst['appliance']['category']]
+            cat_limits = cat_info['pressure_range']
+            atm_low = -low_fire_data['total_available_draft']
+            
+            if cat_limits[0] <= atm_low <= cat_limits[1]:
+                st.success(f"✅ **Low fire compliant:** {atm_low:.4f} in w.c. is within {cat_limits[0]:.2f} to {cat_limits[1]:.2f} range")
+            else:
+                st.error(f"❌ **Low fire NON-COMPLIANT:** {atm_low:.4f} in w.c. is outside {cat_limits[0]:.2f} to {cat_limits[1]:.2f} range")
+                
+                # Determine if needs VCS, ODCS, or both
+                atm_high = -worst['total_available_draft']
+                
+                if atm_high > cat_limits[1] and atm_low > cat_limits[1]:
+                    st.warning("⚠️ **Solution:** VCS (Draft Inducer) needed at both high and low fire")
+                elif atm_high < cat_limits[0] and atm_low < cat_limits[0]:
+                    st.warning("⚠️ **Solution:** ODCS (Overdraft Control) needed at both high and low fire")
+                elif atm_high < cat_limits[0] and atm_low > cat_limits[1]:
+                    st.error("🚨 **CRITICAL:** Excessive draft at high fire, insufficient at low fire")
+                    st.warning("⚠️ **Solution:** VCS + ODCS (Combined system) or RBD (Relief Barometric Damper) required")
+                elif atm_high > cat_limits[1] and atm_low < cat_limits[0]:
+                    st.error("🚨 **CRITICAL:** Insufficient draft at high fire, excessive at low fire (unusual condition)")
+                    st.warning("⚠️ **Review:** Check vent sizing and configuration")
+        
+        st.markdown("---")
     
     # ========================================================================
     # CATEGORY COMPLIANCE
@@ -1777,6 +1903,9 @@ elif st.session_state.step == 'draft_inducer_type':
     total_cfm = all_op['combined']['total_cfm'] if all_op else 0
     static_pressure = abs(worst['total_available_draft'])
     
+    # Get mean flue gas temperature for correction
+    mean_temp_f = all_op['combined']['weighted_avg_temp_f'] if all_op else 300
+    
     # Determine if draft inducer is needed
     atm_pressure = -worst['total_available_draft']
     cat_info = calc.appliance_categories.get(worst['appliance']['category'], {})
@@ -1793,54 +1922,79 @@ elif st.session_state.step == 'draft_inducer_type':
         
         st.write(f"**System Requirements:**")
         st.write(f"• Airflow: {total_cfm:.0f} CFM")
-        st.write(f"• Static Pressure: {static_pressure:.3f} in w.c.")
+        st.write(f"• Static Pressure: {static_pressure:.3f} in w.c. at {mean_temp_f:.0f}°F")
+        
+        st.info("💡 **Note:** Fan curves are at 70°F. System pressure will be adjusted for actual flue gas temperature.")
         
         st.markdown("---")
         st.write("**Select draft inducer configuration:**")
+        st.write("")
         
         # Check which series can work
-        options = []
-        
-        # Check TRV
-        trv_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'TRV')
-        if trv_selection:
-            options.append(('TRV', trv_selection))
-        
-        # Check T9F
-        t9f_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'T9F')
-        if t9f_selection:
-            options.append(('T9F', t9f_selection))
-        
-        # Check CBX
-        cbx_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'CBX')
-        if cbx_selection:
-            options.append(('CBX', cbx_selection))
+        cbx_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'CBX', mean_temp_f)
+        trv_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'TRV', mean_temp_f)
+        t9f_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, 'T9F', mean_temp_f)
         
         # Get CARL recommendation
-        auto_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, None)
+        auto_selection = selector.select_draft_inducer_series(total_cfm, static_pressure, None, mean_temp_f)
         
-        # Create columns for buttons
-        num_options = len(options) + 1  # +1 for auto
-        cols = st.columns(num_options)
+        # Create 3 columns for the 3 fan types
+        col1, col2, col3 = st.columns(3)
         
-        for idx, (series, selection) in enumerate(options):
-            with cols[idx]:
-                is_recommended = auto_selection and auto_selection['series'] == series
-                label = f"{'⭐ ' if is_recommended else ''}{series}"
-                if st.button(f"{label}\n{selection['description']}", key=f"btn_inducer_{series}", use_container_width=True):
-                    st.session_state.data['products']['draft_inducer'] = selection
+        with col1:
+            st.write("**CBX Series**")
+            st.write("Termination Mount")
+            st.write("(Top of chimney)")
+            is_recommended = auto_selection and auto_selection['series'] == 'CBX'
+            if cbx_selection:
+                label = f"{'⭐ ' if is_recommended else ''}Select CBX"
+                if st.button(label, key="btn_inducer_CBX", use_container_width=True):
+                    st.session_state.data['products']['draft_inducer'] = cbx_selection
+                    st.session_state.data['draft_inducer_preference'] = 'CBX'
                     st.session_state.step = 'controller_touchscreen'
                     st.rerun()
+            else:
+                st.button("❌ Not Available", key="btn_cbx_na", disabled=True, use_container_width=True)
         
-        # CARL Recommends button
-        with cols[-1]:
-            if st.button(f"⭐ CARL Recommends\n{auto_selection['series_name'] if auto_selection else 'Auto-Select'}", 
-                        key="btn_inducer_auto", use_container_width=True):
-                st.session_state.data['products']['draft_inducer'] = auto_selection
-                st.session_state.step = 'controller_touchscreen'
-                st.rerun()
+        with col2:
+            st.write("**TRV Series**")
+            st.write("True Inline")
+            st.write("(Compact, straight)")
+            is_recommended = auto_selection and auto_selection['series'] == 'TRV'
+            if trv_selection:
+                label = f"{'⭐ ' if is_recommended else ''}Select TRV"
+                if st.button(label, key="btn_inducer_TRV", use_container_width=True):
+                    st.session_state.data['products']['draft_inducer'] = trv_selection
+                    st.session_state.data['draft_inducer_preference'] = 'TRV'
+                    st.session_state.step = 'controller_touchscreen'
+                    st.rerun()
+            else:
+                st.button("❌ Not Available", key="btn_trv_na", disabled=True, use_container_width=True)
+        
+        with col3:
+            st.write("**T9F Series**")
+            st.write("90° Inline")
+            st.write("(Space saving)")
+            is_recommended = auto_selection and auto_selection['series'] == 'T9F'
+            if t9f_selection:
+                label = f"{'⭐ ' if is_recommended else ''}Select T9F"
+                if st.button(label, key="btn_inducer_T9F", use_container_width=True):
+                    st.session_state.data['products']['draft_inducer'] = t9f_selection
+                    st.session_state.data['draft_inducer_preference'] = 'T9F'
+                    st.session_state.step = 'controller_touchscreen'
+                    st.rerun()
+            else:
+                st.button("❌ Not Available", key="btn_t9f_na", disabled=True, use_container_width=True)
         
         st.markdown("---")
+        
+        # Show CARL recommendation
+        if auto_selection:
+            st.success(f"⭐ **CARL Recommends:** {auto_selection['series_name']} - {auto_selection['model']}")
+            st.write(f"**Why:** {auto_selection['description']}")
+        
+        st.markdown("---")
+        
         if st.button("⬅️ Back", key="btn_inducer_back"):
             st.session_state.step = 'product_selection_start'
             st.rerun()
@@ -1855,7 +2009,39 @@ elif st.session_state.step == 'controller_touchscreen':
     st.write("")
     st.write("**Do you want a touchscreen controller?**")
     
-    st.info("💡 Touchscreen controllers provide easier operation and better visibility. LCD controllers are more economical.")
+    st.info("💡 Touchscreen controllers (V250/V300/V350) provide easier operation and better visibility. LCD controllers (V150/H100) are more economical.")
+    
+    # Show which controllers are available based on appliance count
+    st.write("**Available Controllers:**")
+    
+    available_controllers = []
+    
+    # V250: 1-6 appliances
+    if num_appliances <= 6:
+        available_controllers.append(('V250', '1-6 appliances', '4\" Touchscreen', True))
+    
+    # V300: 1-4 appliances
+    if num_appliances <= 4:
+        available_controllers.append(('V300', '1-4 appliances', '7\" Touchscreen', True))
+    
+    # V350: 1-15 appliances
+    if num_appliances <= 15:
+        available_controllers.append(('V350', '1-15 appliances', '7\" Touchscreen', True))
+    
+    # V150: 1-2 appliances (LCD)
+    if num_appliances <= 2:
+        available_controllers.append(('V150', '1-2 appliances', 'LCD with 4 buttons', False))
+    
+    # H100: 1 appliance (LCD)
+    if num_appliances == 1:
+        available_controllers.append(('H100', '1 appliance', 'LCD', False))
+    
+    # Display available options
+    for controller, app_range, display, is_touch in available_controllers:
+        icon = "📱" if is_touch else "📟"
+        st.write(f"{icon} **{controller}** - {app_range} - {display}")
+    
+    st.markdown("---")
     
     col1, col2, col3 = st.columns(3)
     
@@ -1868,13 +2054,13 @@ elif st.session_state.step == 'controller_touchscreen':
             st.rerun()
     
     with col2:
-        if st.button("📱 Yes - Touchscreen", key="btn_touch_yes", use_container_width=True):
+        if st.button("📱 Yes - Touchscreen\n(V250/V300/V350)", key="btn_touch_yes", use_container_width=True):
             st.session_state.data['wants_touchscreen'] = True
             st.session_state.step = 'supply_air_option'
             st.rerun()
     
     with col3:
-        if st.button("📟 No - LCD Display", key="btn_touch_no", use_container_width=True):
+        if st.button("📟 No - LCD Display\n(V150/H100)", key="btn_touch_no", use_container_width=True):
             st.session_state.data['wants_touchscreen'] = False
             st.session_state.step = 'supply_air_option'
             st.rerun()
@@ -2018,15 +2204,30 @@ elif st.session_state.step == 'confirm_products':
         inducer = st.session_state.data['products']['draft_inducer']
         all_op = result.get('all_operating')
         total_cfm = all_op['combined']['total_cfm'] if all_op else 0
-        static_pressure = abs(worst['total_available_draft'])
+        static_pressure_actual = abs(worst['total_available_draft'])
+        
+        # Get the corrected pressure used for fan selection
+        static_pressure_70f = inducer.get('corrected_pressure_70f', static_pressure_actual)
+        mean_temp_f = all_op['combined']['weighted_avg_temp_f'] if all_op else 300
         
         st.markdown("### 📊 Fan Performance Curve")
+        
+        # Show both actual and corrected pressures
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.metric("System Pressure (Actual)", f"{static_pressure_actual:.3f} in w.c.", 
+                     f"at {mean_temp_f:.0f}°F")
+        with col_b:
+            st.metric("System Pressure (70°F Equivalent)", f"{static_pressure_70f:.3f} in w.c.",
+                     "used for fan selection")
+        
+        st.write("")
         
         fig = selector.plot_fan_and_system_curves(
             fan_model=inducer['model'],
             system_cfm=total_cfm,
-            system_pressure=static_pressure,
-            title=f"{inducer['model']} Performance with System Operating Point"
+            system_pressure=static_pressure_70f,  # Use corrected pressure
+            title=f"{inducer['model']} Performance Curve with System Operating Point"
         )
         
         if fig:
@@ -2038,6 +2239,8 @@ elif st.session_state.step == 'confirm_products':
             fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
             buf.seek(0)
             st.session_state.data['fan_curve_image'] = buf.getvalue()
+        else:
+            st.warning(f"⚠️ Fan curve data not available for {inducer['model']}")
     
     st.markdown("---")
     
