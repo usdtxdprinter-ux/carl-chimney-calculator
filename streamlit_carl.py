@@ -1905,7 +1905,16 @@ elif st.session_state.step == 'draft_inducer_type':
     static_pressure = abs(worst['total_available_draft'])
     
     # Get mean flue gas temperature for correction
-    mean_temp_f = all_op['combined']['weighted_avg_temp_f'] if all_op else 300
+    # Try to get from combined results, otherwise calculate from appliances
+    if all_op and 'combined' in all_op and 'weighted_avg_temp_f' in all_op['combined']:
+        mean_temp_f = all_op['combined']['weighted_avg_temp_f']
+    elif all_op and 'common_vent' in all_op:
+        # Try to get from common vent data
+        mean_temp_f = all_op['common_vent'].get('mean_temp_f', 300)
+    else:
+        # Calculate from worst case appliance or use default
+        mean_temp_f = worst['appliance'].get('temp_f', 300)
+
     
     # Determine if draft inducer is needed
     atm_pressure = -worst['total_available_draft']
