@@ -67,6 +67,7 @@ class ProductSelector:
             'draft_inducer_needed': True,
             'controller_type': None,
             'odcs_needed': False,
+            'cds3_needed': False,
             'odcs_with_rbd': False,
             'barometric_dampers': False,
             'warnings': [],
@@ -115,14 +116,13 @@ class ProductSelector:
             # GUARD RAIL 1: Category IV systems - Check if natural draft sufficient
             if all_cat_iv:
                 # For Category IV, check manifold pressure requirement
-                # If manifold shows POSITIVE atmospheric pressure (negative draft), 
-                # this means natural draft is pushing in wrong direction - need mechanical draft
-                # If manifold pressure is very low (< 0.11), can use natural draft with control
                 
                 if manifold_pressure < 0.11:
-                    # Very low pressure requirement - natural draft with CDS3 is sufficient
+                    # Very low pressure requirement - CDS3 for overdraft control
+                    # Still recommend CDS3 to prevent code violations and maintain safe operation
                     recommendation['draft_inducer_needed'] = False
-                    recommendation['odcs_needed'] = True
+                    recommendation['odcs_needed'] = False
+                    recommendation['cds3_needed'] = True
                     recommendation['controller_type'] = 'CDS3_ONLY'
                     
                     # Check if there are building heating appliances (>200 MBH indicates heating)
@@ -131,39 +131,43 @@ class ProductSelector:
                         recommendation['odcs_with_rbd'] = True
                         recommendation['notes'].append(
                             f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
-                            "Natural draft with CDS3 overdraft control is sufficient. "
-                            "ODCS with RBD recommended for building heating applications."
+                            "CDS3 chimney draft stabilization recommended for code compliance and safety. "
+                            "ODCS with RBD available for building heating applications."
                         )
                     else:
                         recommendation['notes'].append(
                             f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
-                            "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+                            "CDS3 chimney draft stabilization recommended for code compliance and safe operation."
                         )
                     return recommendation
                 else:
-                    # Need mechanical draft, but ignore connector pressure loss
+                    # Need mechanical draft for Cat IV
+                    recommendation['draft_inducer_needed'] = True
                     recommendation['notes'].append(
                         "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system. "
                         "Only manifold pressure used for fan selection."
                     )
             
-            # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) for non-Category IV - CDS3 only
+            # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) for non-Category IV
+            # Still need draft control - recommend ODCS or CDS3
             elif manifold_pressure < 0.11:
                 recommendation['draft_inducer_needed'] = False
                 recommendation['odcs_needed'] = True
-                recommendation['controller_type'] = 'CDS3_ONLY'
+                recommendation['controller_type'] = 'ODCS'
                 recommendation['notes'].append(
                     f"Manifold pressure ({manifold_pressure:.4f} in w.c.) is under 0.11 in w.c. - "
-                    "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+                    "ODCS overdraft control system recommended for code compliance and safe operation."
                 )
                 return recommendation
         
-        # GUARD RAIL 3: All Category I - Recommend barometric dampers
+        # GUARD RAIL 3: All Category I - ALWAYS need VCS + Barometric dampers
+        # Cat I appliances ALWAYS need draft assistance and spillage protection
         if all_cat_i:
+            recommendation['draft_inducer_needed'] = True
             recommendation['barometric_dampers'] = True
             recommendation['notes'].append(
-                "All Category I appliances: KW Barometric Dampers recommended on all appliances "
-                "for draft regulation and spillage prevention."
+                "All Category I appliances: VCS draft inducer REQUIRED for code compliance. "
+                "KW Barometric Dampers recommended on all appliances for draft regulation and spillage prevention."
             )
         
         # GUARD RAIL 4: Check for turndown overdraft situation

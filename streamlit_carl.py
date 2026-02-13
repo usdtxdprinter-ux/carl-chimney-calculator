@@ -1942,46 +1942,40 @@ elif st.session_state.step == 'draft_inducer_type':
     # Get intelligent system recommendation
     recommendation = selector.get_system_recommendation(appliances, result)
     
-    # Check if draft inducer is even needed
-    if not recommendation['draft_inducer_needed']:
-        st.subheader("✅ Natural Draft System")
-        st.success("Based on system analysis, natural draft is sufficient for this application.")
+    # CRITICAL: We NEVER recommend natural draft only - always need draft control equipment
+    # All systems need either VCS, ODCS, or CDS3
+    
+    # Check if CDS3-only system (Cat IV low pressure)
+    if recommendation.get('cds3_needed'):
+        st.subheader("✅ CDS3 Chimney Draft Stabilization System")
+        st.success("Category IV system with low pressure - CDS3 recommended for code compliance and safe operation.")
         
         # Display recommendation notes
         for note in recommendation['notes']:
             st.info(f"ℹ️ {note}")
         
-        if recommendation['odcs_needed']:
-            # Check if all Category IV (use CDS3) or mixed (use ODCS)
-            categories = [app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '') 
-                         for app in appliances]
-            all_cat_iv = all(cat == 'IV' for cat in categories)
-            
-            if all_cat_iv:
-                st.write("**Required Equipment:**")
-                st.write(f"• **CDS3 System** - {len(appliances)} unit(s) (one per appliance connector)")
-                st.write("  - Self-contained draft control for Category IV appliances")
-                st.write("  - No separate controller needed")
-                st.session_state.data['products']['cds3'] = True
-                st.session_state.data['products']['odcs'] = False
-            else:
-                st.write("**Required Equipment:**")
-                st.write("• **ODCS System** - Overdraft control with controller")
-                st.session_state.data['products']['odcs'] = True
-                st.session_state.data['products']['cds3'] = False
-            
-            st.session_state.data['products']['draft_inducer'] = None
-            st.session_state.data['products']['controller'] = None  # No controller for CDS3
+        st.write("**Required Equipment:**")
+        st.write(f"• **CDS3 System** - {len(appliances)} unit(s) (one per appliance connector)")
+        st.write("  - Self-contained draft control for Category IV appliances")
+        st.write("  - No separate controller needed")
+        st.write("  - Prevents code violations and ensures safe operation")
+        
+        st.session_state.data['products']['cds3'] = True
+        st.session_state.data['products']['odcs'] = False
+        st.session_state.data['products']['draft_inducer'] = None
+        st.session_state.data['products']['controller'] = None
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("⬅️ Back", key="btn_back_natural"):
+            if st.button("⬅️ Back", key="btn_back_cds3"):
                 st.session_state.step = 'confirm_appliances'
                 st.rerun()
         with col2:
-            if st.button("➡️ Continue to Specification", key="btn_continue_natural", use_container_width=True):
+            if st.button("➡️ Continue to Specification", key="btn_continue_cds3", use_container_width=True):
                 st.session_state.step = 'confirm_products'
                 st.rerun()
+        
+        st.stop()
     else:
         # Need powered draft - continue with selection
         
