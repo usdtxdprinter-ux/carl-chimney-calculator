@@ -1304,18 +1304,34 @@ elif st.session_state.step == 'results':
         ('Single Smallest', result.get('single_smallest'))
     ]
     
+    has_data = False
     for name, scenario in scenarios:
-        if scenario and scenario is not None:
-            cfm = scenario['combined']['total_cfm']
-            vel = scenario['common_vent']['velocity_fps'] * 60
-            draft = scenario['common_vent']['available_draft_inwc']
-            
-            scenario_data["Scenario"].append(name)
-            scenario_data["CFM"].append(f"{cfm:.1f}")
-            scenario_data["Velocity (ft/min)"].append(f"{vel:.0f}")
-            scenario_data["Draft (in w.c.)"].append(f"{draft:.4f}")
+        if scenario and isinstance(scenario, dict) and 'combined' in scenario and 'common_vent' in scenario:
+            try:
+                cfm = scenario['combined']['total_cfm']
+                vel = scenario['common_vent']['velocity_fps'] * 60
+                draft = scenario['common_vent']['available_draft_inwc']
+                
+                scenario_data["Scenario"].append(name)
+                scenario_data["CFM"].append(f"{cfm:.1f}")
+                scenario_data["Velocity (ft/min)"].append(f"{vel:.0f}")
+                scenario_data["Draft (in w.c.)"].append(f"{draft:.4f}")
+                has_data = True
+            except (KeyError, TypeError) as e:
+                continue
     
-    st.table(pd.DataFrame(scenario_data))
+    if has_data:
+        st.table(pd.DataFrame(scenario_data))
+    else:
+        # Fallback: Show worst case data only
+        st.warning("⚠️ Multiple scenario analysis not available. Showing worst case analysis only.")
+        worst_case_data = {
+            "Scenario": ["Worst Case"],
+            "CFM": [f"{worst.get('appliance', {}).get('mbh', 0) * 0.8:.1f}"],  # Approximate CFM
+            "Velocity (ft/min)": ["See manifold section"],
+            "Draft (in w.c.)": [f"{worst.get('total_available_draft', 0):.4f}"]
+        }
+        st.table(pd.DataFrame(worst_case_data))
     
     # ========================================================================
     # SYSTEM DRAFT SUMMARY TABLE
@@ -1458,45 +1474,51 @@ elif st.session_state.step == 'results':
     st.markdown("## 🌡️ Seasonal Draft Variation")
     
     all_op = result.get('all_operating')
+    available_draft = None
+    
+    # Try to get draft from all_operating scenario
     if all_op and isinstance(all_op, dict) and 'common_vent' in all_op:
         common_vent = all_op['common_vent']
         if isinstance(common_vent, dict) and 'available_draft_inwc' in common_vent:
-            available = common_vent['available_draft_inwc']
-            winter_draft = available * 1.4
-            summer_draft = available * 0.6
-            variation_range = abs(winter_draft - summer_draft)
-            
-            seasonal_data = {
-                "Condition": [
-                    "Winter (0°F)",
-                    f"Design ({st.session_state.data['temp_outside_f']}°F)",
-                    "Summer (95°F)",
-                    "",
-                    "**Total Variation**"
-                ],
-                "Draft (in w.c.)": [
-                    f"{winter_draft:.4f}",
-                    f"{available:.4f}",
-                    f"{summer_draft:.4f}",
-                    "",
-                    f"**{variation_range:.4f}**"
-                ],
-                "Change from Design": [
-                    "+40% (Higher draft)",
-                    "Calculated value",
-                    "−40% (Lower draft)",
-                    "",
-                    "**80% total swing**"
-                ]
-            }
-            
-            st.table(pd.DataFrame(seasonal_data))
-            
-            st.error("⚠️ **CRITICAL:** Draft varies 80% throughout the year! US Draft Co. controls are REQUIRED for safe, consistent operation.")
-        else:
-            st.warning("⚠️ Seasonal variation data incomplete - draft controls still recommended")
-    else:
-        st.warning("⚠️ Seasonal variation data not available - draft controls still recommended")
+            available_draft = common_vent['available_draft_inwc']
+    
+    # Fallback to worst case if all_operating not available
+    if available_draft is None:
+        available_draft = worst.get('total_available_draft', -0.10)
+        st.info("ℹ️ Using worst case draft for seasonal variation analysis")
+    
+    # Calculate seasonal variation
+    winter_draft = available_draft * 1.4
+    summer_draft = available_draft * 0.6
+    variation_range = abs(winter_draft - summer_draft)
+    
+    seasonal_data = {
+        "Condition": [
+            "Winter (0°F)",
+            f"Design ({st.session_state.data['temp_outside_f']}°F)",
+            "Summer (95°F)",
+            "",
+            "**Total Variation**"
+        ],
+        "Draft (in w.c.)": [
+            f"{winter_draft:.4f}",
+            f"{available_draft:.4f}",
+            f"{summer_draft:.4f}",
+            "",
+            f"**{variation_range:.4f}**"
+        ],
+        "Change from Design": [
+            "+40% (Higher draft)",
+            "Calculated value",
+            "−40% (Lower draft)",
+            "",
+            "**80% total swing**"
+        ]
+    }
+    
+    st.table(pd.DataFrame(seasonal_data))
+    
+    st.error("⚠️ **CRITICAL:** Draft varies 80% throughout the year! US Draft Co. controls are REQUIRED for safe, consistent operation.")
     
     # ========================================================================
     # COMBUSTION AIR REQUIREMENTS
