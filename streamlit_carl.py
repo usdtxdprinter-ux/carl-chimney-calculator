@@ -2362,15 +2362,20 @@ elif st.session_state.step == 'confirm_products':
     need_odcs = atm_pressure < cat_limits[0] or (not need_vcs and atm_pressure > -0.01)  # Also recommend for stability
     needs_pas = st.session_state.data.get('wants_pas', False)
     
-    # Select controller
-    controller = selector.select_controller(
-        num_appliances=st.session_state.data['num_appliances'],
-        needs_vcs=need_vcs,
-        needs_odcs=need_odcs,
-        needs_pas=needs_pas,
-        wants_touchscreen=st.session_state.data.get('wants_touchscreen', False)
-    )
-    st.session_state.data['products']['controller'] = controller
+    # Check if CDS3-only system (no controller needed)
+    if st.session_state.data.get('products', {}).get('cds3') is True:
+        # CDS3-only - skip controller selection
+        st.session_state.data['products']['controller'] = None
+    else:
+        # Select controller for other systems
+        controller = selector.select_controller(
+            num_appliances=st.session_state.data['num_appliances'],
+            needs_vcs=need_vcs,
+            needs_odcs=need_odcs,
+            needs_pas=needs_pas,
+            wants_touchscreen=st.session_state.data.get('wants_touchscreen', False)
+        )
+        st.session_state.data['products']['controller'] = controller
     
     # Add ODCS if needed
     if need_odcs:
@@ -2384,9 +2389,15 @@ elif st.session_state.step == 'confirm_products':
     st.markdown("### 📦 Selected Products:")
     
     # Controller
-    st.write(f"**Controller:** {controller['model']}")
-    st.write(f"  - Display: {controller['display']}")
-    st.write(f"  - Configuration: {controller['configuration']}")
+    if st.session_state.data['products'].get('controller'):
+        controller = st.session_state.data['products']['controller']
+        st.write(f"**Controller:** {controller['model']}")
+        st.write(f"  - Display: {controller['display']}")
+        st.write(f"  - Configuration: {controller['configuration']}")
+    elif st.session_state.data['products'].get('cds3'):
+        st.write(f"**Controller:** None (CDS3 is self-contained)")
+    else:
+        st.write(f"**Controller:** TBD")
     
     # Draft Inducer
     if st.session_state.data['products'].get('draft_inducer'):
