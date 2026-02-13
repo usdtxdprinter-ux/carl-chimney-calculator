@@ -163,10 +163,28 @@ class PDFReportGenerator:
         return buffer
     
     def _add_title_page(self, project_data):
-        """Add enhanced title page"""
+        """Add enhanced title page with US Draft logo"""
         story = []
         
-        story.append(Spacer(1, 1*inch))
+        # Add logo at top
+        import os
+        logo_path = os.path.join(os.path.dirname(__file__), 'us_draft_logo.png')
+        if os.path.exists(logo_path):
+            # Calculate proportional height for 4-inch width
+            from reportlab.lib.utils import ImageReader
+            img = ImageReader(logo_path)
+            img_width, img_height = img.getSize()
+            aspect = img_height / float(img_width)
+            logo_width = 4 * inch
+            logo_height = logo_width * aspect
+            
+            logo = Image(logo_path, width=logo_width, height=logo_height)
+            logo.hAlign = 'CENTER'
+            story.append(Spacer(1, 0.5*inch))
+            story.append(logo)
+            story.append(Spacer(1, 0.5*inch))
+        else:
+            story.append(Spacer(1, 1*inch))
         
         # Main title with line
         title = Paragraph("CHIMNEY DRAFT SYSTEM", self.styles['MainTitle'])

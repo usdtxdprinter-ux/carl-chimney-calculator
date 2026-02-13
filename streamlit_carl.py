@@ -167,7 +167,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Main title
-st.title("🔥 CARL")
+# Display logo and title
+import os
+logo_path = os.path.join(os.path.dirname(__file__), 'us_draft_logo.png')
+if os.path.exists(logo_path):
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(logo_path, use_container_width=True)
+    st.markdown("<h1 style='text-align: center;'>CARL - Chimney Analysis & Reasoning Layer</h1>", unsafe_allow_html=True)
+else:
+    st.title("🔥 CARL")
 st.caption("Chimney Analysis and Reasoning Layer")
 st.markdown("---")
 
