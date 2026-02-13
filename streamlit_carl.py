@@ -1952,12 +1952,26 @@ elif st.session_state.step == 'draft_inducer_type':
             st.info(f"ℹ️ {note}")
         
         if recommendation['odcs_needed']:
-            st.write("**Required Equipment:**")
-            st.write(f"• **CDS3 System** - {len(appliances)} unit(s) (one per appliance connector)")
-            st.write("  - Self-contained draft control - no separate controller needed")
-            st.session_state.data['products']['odcs'] = True
+            # Check if all Category IV (use CDS3) or mixed (use ODCS)
+            categories = [app.get('category', 'I').upper().replace('CAT_', '').replace('CATEGORY_', '') 
+                         for app in appliances]
+            all_cat_iv = all(cat == 'IV' for cat in categories)
+            
+            if all_cat_iv:
+                st.write("**Required Equipment:**")
+                st.write(f"• **CDS3 System** - {len(appliances)} unit(s) (one per appliance connector)")
+                st.write("  - Self-contained draft control for Category IV appliances")
+                st.write("  - No separate controller needed")
+                st.session_state.data['products']['cds3'] = True
+                st.session_state.data['products']['odcs'] = False
+            else:
+                st.write("**Required Equipment:**")
+                st.write("• **ODCS System** - Overdraft control with controller")
+                st.session_state.data['products']['odcs'] = True
+                st.session_state.data['products']['cds3'] = False
+            
             st.session_state.data['products']['draft_inducer'] = None
-            st.session_state.data['products']['controller'] = None  # No controller needed!
+            st.session_state.data['products']['controller'] = None  # No controller for CDS3
         
         col1, col2 = st.columns(2)
         with col1:
@@ -2013,6 +2027,8 @@ elif st.session_state.step == 'draft_inducer_type':
                 
                 The CDS3 is a **self-contained draft control system** - no separate controller needed!
                 
+                **Designed specifically for Category IV condensing appliances.**
+                
                 **Each CDS3 unit includes:**
                 - Motorized damper with 24VAC actuator (2-second stroke, spring return)
                 - Bidirectional pressure transducer (±2.0" w.c., 0.001" resolution)
@@ -2028,16 +2044,8 @@ elif st.session_state.step == 'draft_inducer_type':
                 **No additional controller or interface needed** - each CDS3 operates independently!
                 """)
                 
-                # Check if there are building heating appliances
-                has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
-                if has_heating:
-                    st.write("")
-                    st.write("#### Alternative Option for Building Heating:")
-                    st.write("**ODCS with RBD (Overdraft Control System with Relief Backdraft Damper)**")
-                    st.write("- Recommended for larger building heating applications")
-                    st.write("- Provides backdraft protection")
-                
-                st.session_state.data['products']['odcs'] = True
+                st.session_state.data['products']['cds3'] = True
+                st.session_state.data['products']['odcs'] = False
                 st.session_state.data['products']['draft_inducer'] = None
                 st.session_state.data['products']['controller'] = None  # No controller needed!
                 
@@ -2193,7 +2201,7 @@ elif st.session_state.step == 'draft_inducer_type':
 elif st.session_state.step == 'controller_touchscreen':
     # Check if CDS3-only system (no controller needed)
     if st.session_state.data.get('products', {}).get('draft_inducer') is None and \
-       st.session_state.data.get('products', {}).get('odcs') is True:
+       st.session_state.data.get('products', {}).get('cds3') is True:
         # CDS3-only system - skip controller selection
         st.session_state.data['products']['controller'] = None
         st.session_state.step = 'confirm_products'

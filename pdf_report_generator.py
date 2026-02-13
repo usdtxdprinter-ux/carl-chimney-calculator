@@ -652,7 +652,7 @@ class PDFReportGenerator:
             story.append(Spacer(1, 0.15*inch))
         
         # Controller
-        if products.get('controller'):
+        if products.get('controller') and products.get('controller') is not None:
             ctrl = products['controller']
             story.append(Paragraph("Electronic Control System", self.styles['SubHeader']))
             
@@ -676,6 +676,68 @@ class PDFReportGenerator:
             ]))
             
             story.append(ctrl_table)
+            story.append(Spacer(1, 0.15*inch))
+        
+        # CDS3 (Category IV only - self-contained, no controller)
+        if products.get('cds3'):
+            story.append(Paragraph("CDS3 Chimney Draft Stabilization System", self.styles['SubHeader']))
+            
+            num_appliances = len(products.get('appliances', []))
+            
+            cds3_data = [
+                ['System:', 'CDS3 Self-Contained Draft Control'],
+                ['Application:', 'Category IV condensing appliances only'],
+                ['Quantity:', f"{num_appliances} unit(s) - one per appliance connector"],
+                ['Control:', 'Built-in PID controller with auto-tuning (self-contained)'],
+                ['Components:', 'Motorized damper, pressure transducer, integrated controller'],
+                ['Draft Range:', '-0.10 to -0.01 in w.c. (adjustable)'],
+                ['Note:', 'No separate controller needed - each CDS3 operates independently']
+            ]
+            
+            cds3_table = Table(cds3_data, colWidths=[1.5*inch, 5*inch])
+            cds3_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), self.light_gray),
+                ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 9),
+                ('FONT', (1, 0), (1, -1), 'Helvetica', 9),
+                ('TEXTCOLOR', (0, 0), (0, -1), self.primary_blue),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ]))
+            
+            story.append(cds3_table)
+            story.append(Spacer(1, 0.15*inch))
+        
+        # ODCS (for non-Category IV, requires controller)
+        if products.get('odcs'):
+            story.append(Paragraph("ODCS Overdraft Control System", self.styles['SubHeader']))
+            
+            odcs_data = [
+                ['System:', 'ODCS with motorized damper'],
+                ['Application:', 'Natural draft systems requiring overdraft control'],
+                ['Control:', 'Requires separate controller (V150/V250/V350)'],
+                ['Components:', 'Motorized damper, pressure sensor'],
+                ['Note:', 'Works with electronic control system for multi-appliance coordination']
+            ]
+            
+            odcs_table = Table(odcs_data, colWidths=[1.5*inch, 5*inch])
+            odcs_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), self.light_gray),
+                ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 9),
+                ('FONT', (1, 0), (1, -1), 'Helvetica', 9),
+                ('TEXTCOLOR', (0, 0), (0, -1), self.primary_blue),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ]))
+            
+            story.append(odcs_table)
         
         story.append(Spacer(1, 0.3*inch))
         
