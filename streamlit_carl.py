@@ -1953,9 +1953,11 @@ elif st.session_state.step == 'draft_inducer_type':
         
         if recommendation['odcs_needed']:
             st.write("**Required Equipment:**")
-            st.write("• CDS3 Overdraft Control System - maintains optimal draft")
+            st.write(f"• **CDS3 System** - {len(appliances)} unit(s) (one per appliance connector)")
+            st.write("  - Self-contained draft control - no separate controller needed")
             st.session_state.data['products']['odcs'] = True
             st.session_state.data['products']['draft_inducer'] = None
+            st.session_state.data['products']['controller'] = None  # No controller needed!
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1996,16 +1998,50 @@ elif st.session_state.step == 'draft_inducer_type':
                     st.success(f"Manifold pressure ({adjusted_pressure:.4f} in w.c.) is very low. "
                              "Natural draft with overdraft control is sufficient.")
                 
-                st.write("**Recommended Equipment:**")
-                st.write("• **CDS3 Overdraft Control System** - Maintains optimal draft and prevents excessive draft")
+                st.markdown("---")
+                
+                st.write("### 📦 Recommended Equipment")
+                
+                num_appliances = len(appliances)
+                
+                st.write("#### CDS3 Chimney Draft Stabilization System")
+                st.write(f"**Quantity Required:** {num_appliances} unit(s) - one per appliance connector")
+                st.write("")
+                
+                st.info("""
+                **ℹ️ About the CDS3:**
+                
+                The CDS3 is a **self-contained draft control system** - no separate controller needed!
+                
+                **Each CDS3 unit includes:**
+                - Motorized damper with 24VAC actuator (2-second stroke, spring return)
+                - Bidirectional pressure transducer (±2.0" w.c., 0.001" resolution)
+                - Built-in PID controller with auto-tuning
+                
+                **How it works:**
+                - Installs in each appliance connector (breeching)
+                - Continuously monitors draft pressure
+                - Automatically modulates damper to maintain optimal draft (-0.10 to -0.01 in w.c.)
+                - Prevents excessive draft that wastes energy
+                - Maintains stable combustion conditions
+                
+                **No additional controller or interface needed** - each CDS3 operates independently!
+                """)
                 
                 # Check if there are building heating appliances
                 has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
                 if has_heating:
-                    st.write("• **ODCS with RBD (Relief Backdraft Damper)** - Alternative option for building heating applications")
+                    st.write("")
+                    st.write("#### Alternative Option for Building Heating:")
+                    st.write("**ODCS with RBD (Overdraft Control System with Relief Backdraft Damper)**")
+                    st.write("- Recommended for larger building heating applications")
+                    st.write("- Provides backdraft protection")
                 
                 st.session_state.data['products']['odcs'] = True
                 st.session_state.data['products']['draft_inducer'] = None
+                st.session_state.data['products']['controller'] = None  # No controller needed!
+                
+                st.markdown("---")
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -2155,6 +2191,14 @@ elif st.session_state.step == 'draft_inducer_type':
 
 # STEP: Controller Touchscreen Preference
 elif st.session_state.step == 'controller_touchscreen':
+    # Check if CDS3-only system (no controller needed)
+    if st.session_state.data.get('products', {}).get('draft_inducer') is None and \
+       st.session_state.data.get('products', {}).get('odcs') is True:
+        # CDS3-only system - skip controller selection
+        st.session_state.data['products']['controller'] = None
+        st.session_state.step = 'confirm_products'
+        st.rerun()
+    
     st.subheader("🎛️ Controller Selection")
     
     num_appliances = st.session_state.data['num_appliances']
