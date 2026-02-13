@@ -47,49 +47,50 @@ class ChimneyCalculator:
         }
         
         # Fitting loss coefficients (K-values) organized by vent type
-        # Based on ASHRAE Fundamentals and manufacturer testing data
+        # Updated from K-Values.xlsx spreadsheet
+        # Values are dimensionless loss coefficients for pressure drop calculation
         self.fitting_coefficients_by_vent_type = {
             'UL441 Type B Vent': {
                 'entrance': 0.5,
-                '15_elbow': 0.15,
-                '30_elbow': 0.25,
-                '45_elbow': 0.35,
+                '15_elbow': 0.12,
+                '30_elbow': 0.12,
+                '45_elbow': 0.25,
                 '90_elbow': 0.75,
-                'straight_tee': 0.3,      # Flow straight through tee
-                '90_tee_branch': 1.3,     # 90° turn at tee (change direction)
-                'lateral_tee': 0.6,       # 45° lateral branch at tee
+                'straight_tee': 1.25,     # Flow straight through tee
+                '90_tee_branch': 1.25,    # 90° turn at tee (using straight tee value)
+                'lateral_tee': 0.40,      # 45° lateral branch at tee
                 'exit': 1.0,
-                'termination_cap': 0.5,
+                'termination_cap': 0.50,  # Stack cap
                 'tee_cap': 0.3,           # Cap on tee branch (dead end)
-                'base_friction_factor': 0.30  # For dP = f*(L/D)*rho*V^2 calculation
+                'base_friction_factor': 0.40  # Vent material friction factor
             },
             'UL1738 Special Gas Vent': {
                 'entrance': 0.5,
-                '15_elbow': 0.18,
-                '30_elbow': 0.28,
-                '45_elbow': 0.40,
-                '90_elbow': 0.85,
-                'straight_tee': 0.35,
-                '90_tee_branch': 1.4,
-                'lateral_tee': 0.7,
+                '15_elbow': 0.12,
+                '30_elbow': 0.12,
+                '45_elbow': 0.15,
+                '90_elbow': 0.30,
+                'straight_tee': 1.25,
+                '90_tee_branch': 1.25,
+                'lateral_tee': 0.55,
                 'exit': 1.0,
-                'termination_cap': 0.6,
+                'termination_cap': 0.50,
                 'tee_cap': 0.35,
-                'base_friction_factor': 0.32
+                'base_friction_factor': 0.27
             },
             'UL103 Pressure Chimney': {
                 'entrance': 0.5,
                 '15_elbow': 0.12,
-                '30_elbow': 0.20,
-                '45_elbow': 0.30,
-                '90_elbow': 0.60,
-                'straight_tee': 0.25,
-                '90_tee_branch': 1.1,
-                'lateral_tee': 0.5,
+                '30_elbow': 0.12,
+                '45_elbow': 0.15,
+                '90_elbow': 0.30,
+                'straight_tee': 1.25,
+                '90_tee_branch': 1.25,
+                'lateral_tee': 0.40,
                 'exit': 1.0,
-                'termination_cap': 0.4,
+                'termination_cap': 0.50,
                 'tee_cap': 0.25,
-                'base_friction_factor': 0.25
+                'base_friction_factor': 0.30
             }
         }
         

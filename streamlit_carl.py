@@ -2515,7 +2515,8 @@ elif st.session_state.step == 'reports_complete':
     system_data = {
         'cfm': all_op['combined']['total_cfm'] if all_op else 0,
         'static_pressure': abs(worst['total_available_draft']),
-        'appliance_category': worst['appliance']['category']
+        'appliance_category': worst['appliance']['category'],
+        'appliances': st.session_state.data.get('appliances', [])
     }
     
     # Generate specification

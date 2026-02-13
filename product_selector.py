@@ -80,56 +80,83 @@ class ProductSelector:
         all_cat_iv = all(cat == 'IV' for cat in categories)
         has_cat_iv = any(cat == 'IV' for cat in categories)
         
-        # Get pressure data
-        worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
-        total_draft = worst_case.get('total_available_draft', 0)  # Negative value
-        manifold_pressure = abs(total_draft)  # Positive value for comparison
+        # Get unique categories
+        unique_categories = set(categories)
+        has_mixed_categories = len(unique_categories) > 1
         
-        # GUARD RAIL 1: Category IV systems - Check if natural draft sufficient
-        if all_cat_iv:
-            # For Category IV, check manifold pressure requirement
-            # If manifold shows POSITIVE atmospheric pressure (negative draft), 
-            # this means natural draft is pushing in wrong direction - need mechanical draft
-            # If manifold pressure is very low (< 0.11), can use natural draft with control
+        # GUARD RAIL: Mixed appliance categories ALWAYS need draft inducer
+        if has_mixed_categories:
+            recommendation['draft_inducer_needed'] = True
+            recommendation['notes'].append(
+                f"Mixed appliance categories detected ({', '.join(sorted(unique_categories))}). "
+                "Draft inducer REQUIRED for proper venting of different appliance types."
+            )
             
-            if manifold_pressure < 0.11:
-                # Very low pressure requirement - natural draft with CDS3 is sufficient
+            # Check if turndown exists for mixed categories - need ODCS
+            has_turndown = any(app.get('turndown_ratio', 1) > 1 for app in appliances)
+            if has_turndown:
+                recommendation['odcs_needed'] = True
+                recommendation['notes'].append(
+                    "Modulating appliances with turndown detected. VCS handles high fire operation. "
+                    "ODCS recommended to control excessive draft at low fire."
+                )
+            
+            # Mixed categories is complex - continue with normal controller selection
+            # Don't return early - need to select controller
+            # Continue to controller selection below
+        else:
+            # Single category - apply category-specific guard rails
+            
+            # Get pressure data
+            worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
+            total_draft = worst_case.get('total_available_draft', 0)  # Negative value
+            manifold_pressure = abs(total_draft)  # Positive value for comparison
+            
+            # GUARD RAIL 1: Category IV systems - Check if natural draft sufficient
+            if all_cat_iv:
+                # For Category IV, check manifold pressure requirement
+                # If manifold shows POSITIVE atmospheric pressure (negative draft), 
+                # this means natural draft is pushing in wrong direction - need mechanical draft
+                # If manifold pressure is very low (< 0.11), can use natural draft with control
+                
+                if manifold_pressure < 0.11:
+                    # Very low pressure requirement - natural draft with CDS3 is sufficient
+                    recommendation['draft_inducer_needed'] = False
+                    recommendation['odcs_needed'] = True
+                    recommendation['controller_type'] = 'CDS3_ONLY'
+                    
+                    # Check if there are building heating appliances (>200 MBH indicates heating)
+                    has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
+                    if has_heating:
+                        recommendation['odcs_with_rbd'] = True
+                        recommendation['notes'].append(
+                            f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
+                            "Natural draft with CDS3 overdraft control is sufficient. "
+                            "ODCS with RBD recommended for building heating applications."
+                        )
+                    else:
+                        recommendation['notes'].append(
+                            f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
+                            "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
+                        )
+                    return recommendation
+                else:
+                    # Need mechanical draft, but ignore connector pressure loss
+                    recommendation['notes'].append(
+                        "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system. "
+                        "Only manifold pressure used for fan selection."
+                    )
+            
+            # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) for non-Category IV - CDS3 only
+            elif manifold_pressure < 0.11:
                 recommendation['draft_inducer_needed'] = False
                 recommendation['odcs_needed'] = True
                 recommendation['controller_type'] = 'CDS3_ONLY'
-                
-                # Check if there are building heating appliances (>200 MBH indicates heating)
-                has_heating = any(app.get('mbh', 0) > 200 for app in appliances)
-                if has_heating:
-                    recommendation['odcs_with_rbd'] = True
-                    recommendation['notes'].append(
-                        f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
-                        "Natural draft with CDS3 overdraft control is sufficient. "
-                        "ODCS with RBD recommended for building heating applications."
-                    )
-                else:
-                    recommendation['notes'].append(
-                        f"Category IV system with low pressure requirement ({manifold_pressure:.4f} in w.c.). "
-                        "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
-                    )
-                return recommendation
-            else:
-                # Need mechanical draft, but ignore connector pressure loss
                 recommendation['notes'].append(
-                    "All Category IV appliances: Connector pressure loss is negligible due to positive pressure system. "
-                    "Only manifold pressure used for fan selection."
+                    f"Manifold pressure ({manifold_pressure:.4f} in w.c.) is under 0.11 in w.c. - "
+                    "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
                 )
-        
-        # GUARD RAIL 2: Low manifold pressure (< 0.11 in w.c.) for non-Category IV - CDS3 only
-        elif manifold_pressure < 0.11:
-            recommendation['draft_inducer_needed'] = False
-            recommendation['odcs_needed'] = True
-            recommendation['controller_type'] = 'CDS3_ONLY'
-            recommendation['notes'].append(
-                f"Manifold pressure ({manifold_pressure:.4f} in w.c.) is under 0.11 in w.c. - "
-                "Natural draft with CDS3 overdraft control is sufficient. No powered draft needed."
-            )
-            return recommendation
+                return recommendation
         
         # GUARD RAIL 3: All Category I - Recommend barometric dampers
         if all_cat_i:
@@ -137,6 +164,70 @@ class ProductSelector:
             recommendation['notes'].append(
                 "All Category I appliances: KW Barometric Dampers recommended on all appliances "
                 "for draft regulation and spillage prevention."
+            )
+        
+        # GUARD RAIL 4: Check for turndown overdraft situation
+        # High fire = More CFM = More pressure loss = Need VCS (insufficient draft)
+        # Low fire = Less CFM = Less pressure loss = Overdraft (excessive draft)
+        # Only recommend ODCS if low fire pressure is actually out of appliance's acceptable range
+        # Category I: Barometric dampers handle low fire overdraft automatically
+        # Other categories: Check if ODCS needed for low fire overdraft control
+        # Skip if mixed categories already handled turndown
+        has_turndown = any(app.get('turndown_ratio', 1) > 1 for app in appliances)
+        
+        if has_turndown and recommendation['draft_inducer_needed'] and not all_cat_i and not has_mixed_categories:
+            # Check if low fire data exists and if it's out of range
+            worst_low = calc_results.get('worst_case_low_fire', {})
+            
+            if worst_low:
+                low_fire_data = worst_low.get('low_fire', {})
+                low_fire_atm = -low_fire_data.get('total_available_draft', 0)
+                
+                # Get category limits for worst case appliance
+                worst_case = calc_results.get('worst_case', {}).get('worst_case', {})
+                appliance_category = worst_case.get('appliance', {}).get('category', 'cat_i')
+                
+                # Category pressure ranges (atmospheric pressure at appliance)
+                category_limits = {
+                    'cat_i': (-0.08, -0.02),
+                    'cat_ii': (-0.08, -0.03),
+                    'cat_iii': (0.02, 0.06),
+                    'cat_iv': (0.02, 0.06)
+                }
+                
+                limits = category_limits.get(appliance_category, (-0.08, -0.02))
+                
+                # Check if low fire atmospheric pressure is below lower limit (too much draft)
+                if low_fire_atm < limits[0]:
+                    # Low fire creates overdraft beyond category limits - need ODCS
+                    recommendation['odcs_needed'] = True
+                    recommendation['notes'].append(
+                        f"Modulating appliances with turndown detected. VCS handles high fire operation "
+                        f"(high mass flow, high pressure loss). Low fire atmospheric pressure "
+                        f"({low_fire_atm:.4f} in w.c.) exceeds category limit ({limits[0]:.2f} in w.c.) - "
+                        f"ODCS recommended to control excessive draft at low fire."
+                    )
+                else:
+                    # Low fire is within range - no ODCS needed
+                    recommendation['notes'].append(
+                        f"Modulating appliances with turndown detected. VCS handles high fire operation. "
+                        f"Low fire atmospheric pressure ({low_fire_atm:.4f} in w.c.) is within category limits - "
+                        f"no overdraft control needed."
+                    )
+            else:
+                # No low fire data available - conservative approach, recommend ODCS
+                recommendation['odcs_needed'] = True
+                recommendation['notes'].append(
+                    "Modulating appliances with turndown detected. VCS handles high fire operation "
+                    "(high mass flow, high pressure loss). ODCS recommended to control potential "
+                    "excessive draft at low fire (low mass flow creates overdraft)."
+                )
+        elif has_turndown and recommendation['draft_inducer_needed'] and all_cat_i:
+            # Category I modulating appliances - barometric dampers handle low fire overdraft
+            recommendation['notes'].append(
+                "Modulating appliances with turndown detected. VCS handles high fire operation "
+                "(high mass flow, high pressure loss). Barometric dampers automatically regulate "
+                "excessive draft at low fire."
             )
         
         # Determine controller type based on system configuration
@@ -149,9 +240,14 @@ class ProductSelector:
         # Count active systems
         system_count = sum([wants_vcs, wants_odcs, wants_pas])
         
-        # GUARD RAIL 4: VCS+PAS or VCS+ODCS with touchscreen = V250
-        if system_count == 2 and wants_touchscreen:
-            if (wants_vcs and wants_pas) or (wants_vcs and wants_odcs):
+        # GUARD RAIL 5: Smart controller defaults based on system count
+        # 2 systems (VCS+PAS or VCS+ODCS) → Default to V250
+        # 3 systems → Default to V300 or V350
+        num_appliances = len(appliances)
+        
+        if wants_touchscreen:
+            if system_count == 2:
+                # Two systems: VCS+PAS or VCS+ODCS → V250
                 recommendation['controller_type'] = 'V250'
                 config = []
                 if wants_vcs:
@@ -164,19 +260,31 @@ class ProductSelector:
                 config_str = '+'.join(config)
                 recommendation['notes'].append(
                     f"Configuration: {config_str} with touchscreen - V250 recommended "
-                    f"(V350 is for 3+ systems or more complex applications)."
+                    f"for 2-system applications."
                 )
-        else:
-            # Standard controller selection
-            num_appliances = len(appliances)
-            
-            if wants_touchscreen:
-                if num_appliances <= 6 and system_count <= 2:
+            elif system_count == 3:
+                # Three systems → V300 or V350 based on appliance count
+                if num_appliances <= 4:
+                    recommendation['controller_type'] = 'V300'
+                    recommendation['notes'].append(
+                        f"Configuration: VCS+ODCS+PAS with touchscreen - V300 recommended "
+                        f"for 3-system applications with {num_appliances} appliances."
+                    )
+                else:
+                    recommendation['controller_type'] = 'V350'
+                    recommendation['notes'].append(
+                        f"Configuration: VCS+ODCS+PAS with touchscreen - V350 recommended "
+                        f"for 3-system applications with {num_appliances} appliances."
+                    )
+            else:
+                # Single system or 4+ systems
+                if num_appliances <= 6:
                     recommendation['controller_type'] = 'V250'
                 else:
                     recommendation['controller_type'] = 'V350'
-            else:
-                recommendation['controller_type'] = 'V150'
+        else:
+            # LCD controller
+            recommendation['controller_type'] = 'V150'
         
         return recommendation
     
