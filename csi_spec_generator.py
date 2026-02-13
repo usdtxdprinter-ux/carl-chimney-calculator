@@ -124,11 +124,31 @@ class CSISpecificationGenerator:
             self._add_section_heading(doc, section, "ELECTRONIC CONTROL SYSTEM")
             self._add_controller_spec(doc, products['controller'])
         
-        # 2.4 OVERDRAFT CONTROL
+        # 2.4 CDS3 CHIMNEY DRAFT STABILIZATION
+        if products.get('cds3'):
+            section_num = "2.2"
+            if products.get('draft_inducer'):
+                section_num = "2.3"
+            if products.get('controller'):
+                section_num = "2.4"
+            
+            self._add_section_heading(doc, section_num, "CDS3 CHIMNEY DRAFT STABILIZATION SYSTEM")
+            self._add_cds3_spec(doc, products, system_data)
+        
+        # 2.5 ODCS (for non-Category IV systems)
         if products.get('odcs'):
-            self._add_section_heading(doc, "2.4", "OVERDRAFT CONTROL SYSTEM")
-            doc.add_paragraph("A. CDS3 Chimney Draft Stabilization System with motorized damper, pressure sensor, and PID controller.")
+            section_num = "2.2"
+            if products.get('draft_inducer'):
+                section_num = "2.3"
+            if products.get('controller'):
+                section_num = "2.4"
+            if products.get('cds3'):
+                section_num = "2.5"
+            
+            self._add_section_heading(doc, section_num, "ODCS OVERDRAFT CONTROL SYSTEM")
+            doc.add_paragraph("A. ODCS with motorized damper, pressure sensor, and controller interface.")
             doc.add_paragraph("B. UL 378 Listed for automatic control of excessive draft on natural draft appliances.")
+            doc.add_paragraph("C. Requires electronic control system (V150/V250/V350) for operation.")
             doc.add_paragraph()
     
     def _add_draft_inducer_spec(self, doc, inducer, system_data):
@@ -174,6 +194,61 @@ class CSISpecificationGenerator:
         doc.add_paragraph("F. Temperature Rating: 550°F continuous, 650°F intermittent")
         doc.add_paragraph("G. Control: 0-10VDC modulating input, EC-Flow™ constant airflow technology")
         doc.add_paragraph("H. Features: Vibration isolation, integral flow proving switch, UL 705 overload protection")
+        doc.add_paragraph()
+    
+    def _add_cds3_spec(self, doc, products, system_data):
+        """Add CDS3 specification with datasheet details"""
+        num_appliances = len(system_data.get('appliances', []))
+        
+        doc.add_paragraph("A. CDS3 Self-Contained Chimney Draft Stabilization System")
+        doc.add_paragraph(f"B. Quantity: {num_appliances} unit(s) - one per appliance connector")
+        doc.add_paragraph("C. Application: Category IV condensing appliances with low draft requirements")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("D. System Components (each CDS3 unit includes):")
+        doc.add_paragraph("   1. Motorized Damper:")
+        doc.add_paragraph("      a. 24VAC actuator with 2-second stroke time")
+        doc.add_paragraph("      b. Spring return to fail-safe position")
+        doc.add_paragraph("      c. Bi-directional modulation (0-100%)")
+        doc.add_paragraph("      d. Stainless steel construction for condensing applications")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("   2. Pressure Transducer:")
+        doc.add_paragraph("      a. Bidirectional measurement range: ±2.0 in w.c.")
+        doc.add_paragraph("      b. Resolution: 0.001 in w.c.")
+        doc.add_paragraph("      c. Accuracy: ±1% of reading")
+        doc.add_paragraph("      d. Temperature compensated")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("   3. Integrated PID Controller:")
+        doc.add_paragraph("      a. Self-contained microprocessor control")
+        doc.add_paragraph("      b. Auto-tuning PID algorithm")
+        doc.add_paragraph("      c. Field-adjustable setpoint: -0.10 to -0.01 in w.c.")
+        doc.add_paragraph("      d. No external controller required")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("E. Performance:")
+        doc.add_paragraph("   1. Maintains constant draft pressure regardless of variations")
+        doc.add_paragraph("   2. Response time: Less than 2 seconds to pressure changes")
+        doc.add_paragraph("   3. Prevents excessive draft that wastes energy")
+        doc.add_paragraph("   4. Maintains stable combustion conditions")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("F. Electrical:")
+        doc.add_paragraph("   1. Power: 24VAC transformer (included)")
+        doc.add_paragraph("   2. Power consumption: 15VA maximum")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("G. Installation:")
+        doc.add_paragraph("   1. Mounts in appliance connector (breeching)")
+        doc.add_paragraph("   2. Install between appliance outlet and common vent")
+        doc.add_paragraph("   3. Pressure tap at appliance flue collar")
+        doc.add_paragraph("   4. Operates independently - no inter-unit communication required")
+        doc.add_paragraph()
+        
+        doc.add_paragraph("H. Compliance:")
+        doc.add_paragraph("   1. UL 378 Listed - Draft Equipment")
+        doc.add_paragraph("   2. Complies with NFPA 54, NFPA 211, IMC, IFGC")
         doc.add_paragraph()
     
     def _add_controller_spec(self, doc, controller):
