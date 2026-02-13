@@ -71,12 +71,14 @@ class CSISpecificationGenerator:
         
         # 1.2 REFERENCES
         self._add_section_heading(doc, "1.2", "REFERENCES")
-        doc.add_paragraph("A. UL 705 - Power Ventilators")
-        doc.add_paragraph("B. UL 378 - Draft Equipment")
-        doc.add_paragraph("C. NFPA 54 - National Fuel Gas Code")
-        doc.add_paragraph("D. NFPA 211 - Chimneys, Fireplaces, Vents")
-        doc.add_paragraph("E. IMC - International Mechanical Code")
-        doc.add_paragraph("F. IFGC - International Fuel Gas Code")
+        doc.add_paragraph("A. ASHRAE - American Society of Heating, Refrigerating and Air-Conditioning Engineers")
+        doc.add_paragraph("   Chimney Design Equation per ASHRAE Handbook - Fundamentals")
+        doc.add_paragraph("B. UL 705 - Power Ventilators")
+        doc.add_paragraph("C. UL 378 - Draft Equipment")
+        doc.add_paragraph("D. NFPA 54 - National Fuel Gas Code")
+        doc.add_paragraph("E. NFPA 211 - Chimneys, Fireplaces, Vents")
+        doc.add_paragraph("F. IMC - International Mechanical Code")
+        doc.add_paragraph("G. IFGC - International Fuel Gas Code")
         doc.add_paragraph()
         
         # 1.3 SUBMITTALS

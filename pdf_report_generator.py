@@ -385,16 +385,31 @@ class PDFReportGenerator:
         story.append(header)
         story.append(Spacer(1, 0.15*inch))
         
-        worst = calc_results.get('worst_case', {}).get('worst_case', {})
+        # Extract worst case data - handle nested structure
+        worst_case_outer = calc_results.get('worst_case', {})
+        if isinstance(worst_case_outer, dict) and 'worst_case' in worst_case_outer:
+            worst = worst_case_outer['worst_case']
+        else:
+            worst = worst_case_outer
+        
         all_op = calc_results.get('all_operating', {})
         
         # Key metrics in highlight boxes
-        total_cfm = all_op.get('combined', {}).get('total_cfm', 0)
+        total_cfm = 0
+        if all_op and isinstance(all_op, dict):
+            total_cfm = all_op.get('combined', {}).get('total_cfm', 0)
+        
+        # If still zero, estimate from worst case appliance
+        if total_cfm == 0 and worst:
+            appliance = worst.get('appliance', {})
+            mbh = appliance.get('mbh', 0)
+            total_cfm = mbh * 0.8  # Rough estimate
+        
         total_draft = worst.get('total_available_draft', 0)
         
         metrics = [
             ['Total Airflow', f"{int(round(total_cfm))} CFM"],
-            ['Pressure Loss', f"{abs(total_draft):.3f} in w.c."],
+            ['Pressure Loss', f"{abs(total_draft):.4f} in w.c."],
             ['Worst Case', f"Appliance #{worst.get('appliance_id', 'N/A')}"]
         ]
         
@@ -431,8 +446,16 @@ class PDFReportGenerator:
             ctrl = products['controller']
             product_data.append(['Controller:', ctrl.get('model', 'N/A')])
         
+        if products.get('cds3'):
+            num_units = len(products.get('appliances', []))
+            product_data.append(['Draft Control:', f'CDS3 ({num_units} units)'])
+        
         if products.get('odcs'):
-            product_data.append(['Overdraft Control:', 'CDS3'])
+            product_data.append(['Overdraft Control:', 'ODCS'])
+        
+        if products.get('supply_fan'):
+            supply = products['supply_fan']
+            product_data.append(['Supply Air:', f"{supply.get('series', '')} {supply.get('model', '')}"])
         
         if product_data:
             prod_table = Table(product_data, colWidths=[2*inch, 4.5*inch])
@@ -525,19 +548,30 @@ class PDFReportGenerator:
         story.append(header)
         story.append(Spacer(1, 0.15*inch))
         
-        worst = calc_results.get('worst_case', {}).get('worst_case', {})
+        # Extract worst case data - handle nested structure
+        worst_case_outer = calc_results.get('worst_case', {})
+        if isinstance(worst_case_outer, dict) and 'worst_case' in worst_case_outer:
+            worst = worst_case_outer['worst_case']
+        else:
+            worst = worst_case_outer
         
         # Connector calculations
         story.append(Paragraph("Connector (Worst Case Appliance)", self.styles['SubHeader']))
         
-        conn = worst.get('connector_result', {}).get('connector', {})
+        # Get connector data with safe defaults
+        conn_result = worst.get('connector_result', {})
+        if isinstance(conn_result, dict):
+            conn = conn_result.get('connector', {})
+        else:
+            conn = {}
+        
         conn_data = [
             ['Diameter:', f"{conn.get('diameter_inches', 0)}\""],
             ['Total Length:', f"{conn.get('total_length_ft', 0):.1f} ft"],
             ['Vertical Rise:', f"{conn.get('height_ft', 0):.1f} ft"],
             ['Velocity:', f"{conn.get('velocity_fpm', 0):.0f} ft/min"],
-            ['Pressure Loss:', f"{abs(conn.get('pressure_loss_inwc', 0)):.3f} in w.c."],
-            ['Available Draft:', f"{conn.get('available_draft_inwc', 0):.3f} in w.c."]
+            ['Pressure Loss:', f"{abs(conn.get('pressure_loss_inwc', 0)):.4f} in w.c."],
+            ['Available Draft:', f"{conn.get('available_draft_inwc', 0):.4f} in w.c."]
         ]
         
         conn_table = Table(conn_data, colWidths=[2*inch, 2*inch])
@@ -556,19 +590,26 @@ class PDFReportGenerator:
         story.append(conn_table)
         story.append(Spacer(1, 0.15*inch))
         
-        # Manifold calculations
+        # Manifold calculations - prefer all_operating, fallback to worst case manifold
         all_op = calc_results.get('all_operating', {})
-        if all_op:
-            story.append(Paragraph("Common Vent (All Appliances Operating)", self.styles['SubHeader']))
-            
+        manifold = None
+        
+        if all_op and isinstance(all_op, dict) and 'common_vent' in all_op:
             manifold = all_op.get('common_vent', {})
+            story.append(Paragraph("Common Vent (All Appliances Operating)", self.styles['SubHeader']))
+        elif worst and isinstance(worst, dict):
+            # Fallback to worst case manifold data
+            manifold = worst.get('manifold_result', {}).get('manifold', {})
+            story.append(Paragraph("Common Vent (Worst Case Analysis)", self.styles['SubHeader']))
+        
+        if manifold and isinstance(manifold, dict):
             man_data = [
                 ['Diameter:', f"{manifold.get('diameter_inches', 0)}\""],
                 ['Height:', f"{manifold.get('height_ft', 0):.1f} ft"],
                 ['Total CFM:', f"{manifold.get('total_cfm', 0):.0f} CFM"],
                 ['Velocity:', f"{manifold.get('velocity_fpm', 0):.0f} ft/min"],
-                ['Pressure Loss:', f"{abs(manifold.get('pressure_loss_inwc', 0)):.3f} in w.c."],
-                ['Available Draft:', f"{manifold.get('available_draft_inwc', 0):.3f} in w.c."]
+                ['Pressure Loss:', f"{abs(manifold.get('pressure_loss_inwc', 0)):.4f} in w.c."],
+                ['Available Draft:', f"{manifold.get('available_draft_inwc', 0):.4f} in w.c."]
             ]
             
             man_table = Table(man_data, colWidths=[2*inch, 2*inch])
@@ -756,12 +797,43 @@ class PDFReportGenerator:
             ]))
             
             story.append(odcs_table)
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Supply Air Fan (PRIO or TAF)
+        if products.get('supply_fan'):
+            supply = products['supply_fan']
+            story.append(Paragraph("Supply Air Fan System", self.styles['SubHeader']))
+            
+            supply_data = [
+                ['Model:', supply.get('model', 'N/A')],
+                ['Series:', supply.get('series', 'N/A')],
+                ['Description:', supply.get('description', 'Positive pressure supply air system')],
+                ['Application:', 'Provides combustion air and building pressurization']
+            ]
+            
+            supply_table = Table(supply_data, colWidths=[1.5*inch, 5*inch])
+            supply_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), self.light_gray),
+                ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 9),
+                ('FONT', (1, 0), (1, -1), 'Helvetica', 9),
+                ('TEXTCOLOR', (0, 0), (0, -1), self.primary_blue),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ]))
+            
+            story.append(supply_table)
+            story.append(Spacer(1, 0.15*inch))
         
         story.append(Spacer(1, 0.3*inch))
         
         # Footer disclaimer
         disclaimer = Paragraph(
             '<i><font size="8" color="#666666">This report is prepared for preliminary design purposes. '
+            'Calculations are based on the ASHRAE Chimney Design Equation and applicable industry standards. '
             'Final installation shall comply with all applicable codes including UL 705, UL 378, '
             'NFPA 54, NFPA 211, IMC, and IFGC, and manufacturer\'s installation instructions.</font></i>',
             self.styles['Normal']

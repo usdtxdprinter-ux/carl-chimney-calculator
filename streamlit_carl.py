@@ -178,6 +178,7 @@ if os.path.exists(logo_path):
 else:
     st.title("🔥 CARL")
 st.caption("Chimney Analysis and Reasoning Layer")
+st.info("📐 **Calculation Basis:** This calculator uses the ASHRAE Chimney Design Equation and industry-standard pressure loss calculations per ASHRAE Handbook - Fundamentals.")
 st.markdown("---")
 
 # Helper function to get current appliance number
